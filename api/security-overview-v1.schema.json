@@ -12,6 +12,7 @@
     "mutation_authorized",
     "first_login",
     "password_change_required",
+    "password_lifecycle",
     "session_policy",
     "session_count",
     "current_session_id",
@@ -33,6 +34,7 @@
       "enum": ["password_change_required", "complete_or_not_required"]
     },
     "password_change_required": { "type": "boolean" },
+    "password_lifecycle": { "$ref": "#/$defs/passwordLifecycle" },
     "session_policy": { "$ref": "#/$defs/sessionPolicy" },
     "session_count": { "type": "integer", "minimum": 1, "maximum": 128 },
     "current_session_id": { "$ref": "#/$defs/identifier" },
@@ -63,7 +65,8 @@
     "identifier": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 255
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
     },
     "identity": {
       "type": "object",
@@ -72,8 +75,25 @@
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
         "username": { "$ref": "#/$defs/identifier" },
-        "display_name": { "type": "string", "maxLength": 512 },
+        "display_name": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+        },
         "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "passwordLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "changed_at", "change_required"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["change_required", "active"]
+        },
+        "changed_at": { "type": "string", "format": "date-time" },
+        "change_required": { "type": "boolean" }
       }
     },
     "sessionPolicy": {
@@ -109,8 +129,16 @@
         "last_activity_at": { "type": "string", "format": "date-time" },
         "idle_expires_at": { "type": "string", "format": "date-time" },
         "expires_at": { "type": "string", "format": "date-time" },
-        "source_ip": { "type": "string", "maxLength": 64 },
-        "user_agent": { "type": "string", "maxLength": 512 },
+        "source_ip": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+        },
+        "user_agent": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+        },
         "current": { "type": "boolean" }
       }
     },
@@ -123,7 +151,11 @@
           "type": "string",
           "enum": ["global", "tenant", "site", "resource"]
         },
-        "id": { "type": "string", "minLength": 1, "maxLength": 255 }
+        "id": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[^\\u0000-\\u001F\\u007F]*$"
+        }
       }
     },
     "grant": {
