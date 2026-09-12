@@ -19,6 +19,7 @@ func TestBuildCSVExportIsBoundedRedactedAndSpreadsheetSafe(t *testing.T) {
 		Details: map[string]any{
 			"token":   "Bearer secret-value",
 			"message": "safe",
+			"network": map[string]any{"client_ip": "192.0.2.44"},
 		},
 	}, "")
 	if err != nil {
@@ -53,7 +54,7 @@ func TestBuildCSVExportIsBoundedRedactedAndSpreadsheetSafe(t *testing.T) {
 		t.Fatalf("unexpected privacy/export policy manifest: %#v", manifest)
 	}
 	text := string(payload)
-	if strings.Contains(text, "203.0.113.55") || strings.Contains(text, "198.51.100.10") {
+	if strings.Contains(text, "203.0.113.55") || strings.Contains(text, "198.51.100.10") || strings.Contains(text, "192.0.2.44") {
 		t.Fatalf("source IP leaked into export: %s", text)
 	}
 	if strings.Contains(text, "secret-value") || strings.Contains(text, "do-not-export") {
