@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"control-center/internal/identity/audit"
 )
@@ -47,12 +48,20 @@ func (s *Server) auditEvents(w http.ResponseWriter, r *http.Request) {
 	if page.HasMore && len(page.Entries) > 0 {
 		nextCursor = encodeAuditCursor(page.Entries[len(page.Entries)-1].SequenceID)
 	}
+	details := map[string]any{
+		"limit": query.Limit, "returned": len(events), "action": query.Action,
+		"outcome": query.Outcome, "actor_id": query.ActorID, "subject_id": query.SubjectID,
+		"search_applied": query.Search != "",
+	}
+	if !query.From.IsZero() {
+		details["from"] = query.From.Format(time.RFC3339Nano)
+	}
+	if !query.To.IsZero() {
+		details["to"] = query.To.Format(time.RFC3339Nano)
+	}
 	if err := s.audit.Append(r.Context(), audit.Event{
 		Action: "audit.events_list", Outcome: "success", ActorID: principal.Identity.ID,
-		SourceIP: remoteIP(r), Details: map[string]any{
-			"limit": query.Limit, "returned": len(events), "action": query.Action,
-			"outcome": query.Outcome, "actor_id": query.ActorID, "subject_id": query.SubjectID,
-		},
+		SourceIP: remoteIP(r), Details: details,
 	}); err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "audit_evidence_unavailable", "Audit read evidence could not be recorded")
 		return
@@ -63,6 +72,7 @@ func (s *Server) auditEvents(w http.ResponseWriter, r *http.Request) {
 func parseAuditQuery(values url.Values) (audit.Query, error) {
 	allowed := map[string]struct{}{
 		"limit": {}, "cursor": {}, "action": {}, "outcome": {}, "actor_id": {}, "subject_id": {},
+		"search": {}, "from": {}, "to": {},
 	}
 	for key, entries := range values {
 		if _, ok := allowed[key]; !ok || len(entries) != 1 {
@@ -75,6 +85,7 @@ func parseAuditQuery(values url.Values) (audit.Query, error) {
 		Outcome:   values.Get("outcome"),
 		ActorID:   values.Get("actor_id"),
 		SubjectID: values.Get("subject_id"),
+		Search:    values.Get("search"),
 	}
 	if rawLimit := strings.TrimSpace(values.Get("limit")); rawLimit != "" {
 		limit, err := strconv.Atoi(rawLimit)
@@ -89,6 +100,20 @@ func parseAuditQuery(values url.Values) (audit.Query, error) {
 			return audit.Query{}, err
 		}
 		query.BeforeSequenceID = sequenceID
+	}
+	if rawFrom := strings.TrimSpace(values.Get("from")); rawFrom != "" {
+		from, err := time.Parse(time.RFC3339Nano, rawFrom)
+		if err != nil {
+			return audit.Query{}, fmt.Errorf("invalid audit from bound: %w", err)
+		}
+		query.From = from
+	}
+	if rawTo := strings.TrimSpace(values.Get("to")); rawTo != "" {
+		to, err := time.Parse(time.RFC3339Nano, rawTo)
+		if err != nil {
+			return audit.Query{}, fmt.Errorf("invalid audit to bound: %w", err)
+		}
+		query.To = to
 	}
 	return audit.NormalizeQuery(query)
 }
