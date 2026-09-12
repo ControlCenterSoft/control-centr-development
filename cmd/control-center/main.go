@@ -113,6 +113,7 @@ func run() error {
 		Handler: splitHandler{
 			core:            api.Handler(),
 			identity:        commonMiddleware(identity),
+			auditExport:     commonMiddleware(identity.AuditEventsExportHandler()),
 			orchestration:   orchestration.Handler(),
 			distributedCore: commonMiddleware(distributedCore.Handler()),
 			incidents:       commonMiddleware(incidentRoutes),
@@ -162,6 +163,7 @@ func run() error {
 type splitHandler struct {
 	core            http.Handler
 	identity        http.Handler
+	auditExport     http.Handler
 	orchestration   http.Handler
 	distributedCore http.Handler
 	incidents       http.Handler
@@ -170,8 +172,13 @@ type splitHandler struct {
 
 func (h splitHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	if path == "/api/v1/audit/events/export" && h.auditExport != nil {
+		h.auditExport.ServeHTTP(w, r)
+		return
+	}
 	if strings.HasPrefix(path, "/api/v1/auth/") ||
 		strings.HasPrefix(path, "/api/v1/identity/") ||
+		strings.HasPrefix(path, "/api/v1/audit/") ||
 		path == "/api/v1/system/overview" ||
 		path == "/login" || path == "/overview" ||
 		strings.HasPrefix(path, "/web/") {
