@@ -16,7 +16,8 @@ import (
 // IncidentMutationCommitter is the PostgreSQL durability boundary required by
 // incidents.OperatorService. The incident successor and its immutable security
 // audit event are committed in one database transaction; neither is reported as
-// successful unless both writes are durable.
+// successful unless both writes are durable. The returned incident is the
+// canonical representation actually written to PostgreSQL.
 type IncidentMutationCommitter struct {
 	db *sql.DB
 }
@@ -28,48 +29,51 @@ func NewIncidentMutationCommitter(db *sql.DB) (*IncidentMutationCommitter, error
 	return &IncidentMutationCommitter{db: db}, nil
 }
 
-func (c *IncidentMutationCommitter) CommitIncidentMutation(ctx context.Context, prepared incidents.PreparedMutation, record incidents.OperatorAuditRecord) error {
+func (c *IncidentMutationCommitter) CommitIncidentMutation(ctx context.Context, prepared incidents.PreparedMutation, record incidents.OperatorAuditRecord) (incidents.Incident, error) {
 	if c == nil || c.db == nil {
-		return incidents.ErrOperatorDependencyUnavailable
+		return incidents.Incident{}, incidents.ErrOperatorDependencyUnavailable
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 
 	next := prepared.Next
 	canonicalizeIncidentTimes(&next)
 	if err := validateIncidentForPersistence(next); err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 
 	tx, err := c.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	current, err := getIncidentTx(ctx, tx, next.ObjectID, true)
 	if err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 	if err := prepared.Precondition.ValidateAgainst(current.ObjectMetadata); err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 	if err := corecontracts.ValidateSuccessor(current.ObjectMetadata, next.ObjectMetadata, prepared.DesiredChanged); err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 
 	event, err := incidentOperatorAuditEvent(current, next, record)
 	if err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 	if err := replaceIncidentWithinTx(ctx, tx, current, next); err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
 	if err := appendAuditEventWithinTx(ctx, tx, event); err != nil {
-		return err
+		return incidents.Incident{}, err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return incidents.Incident{}, err
+	}
+	return next, nil
 }
 
 func replaceIncidentWithinTx(ctx context.Context, tx *sql.Tx, current, next incidents.Incident) error {
