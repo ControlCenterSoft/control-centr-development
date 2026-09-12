@@ -6,12 +6,15 @@ import (
 )
 
 var (
-	ErrInvalidZone         = errors.New("invalid network zone")
-	ErrForwardingDisabled  = errors.New("inter-zone forwarding disabled")
-	ErrEdgeGatewayRequired = errors.New("edge gateway required")
+	ErrInvalidZone                = errors.New("invalid network zone")
+	ErrForwardingDisabled         = errors.New("inter-zone forwarding disabled")
+	ErrEdgeGatewayRequired        = errors.New("edge gateway required")
+	ErrSupportZoneTransitDenied   = errors.New("support zones cannot authorize transit forwarding")
 )
 
-// Zone is a first-class network security zone used by Control Center 0.6.
+// Zone is a first-class network security zone used by Control Center network
+// planning. Classifying an interface into a zone never enables forwarding,
+// NAT, firewall rules, or any host mutation by itself.
 type Zone string
 
 const (
@@ -22,15 +25,21 @@ const (
 	ZoneCluster    Zone = "CLUSTER"
 	ZoneStorage    Zone = "STORAGE"
 	ZoneBackup     Zone = "BACKUP"
+	ZoneSupportLAN Zone = "SUPPORT_LAN"
+	ZoneSupportWAN Zone = "SUPPORT_WAN"
 )
 
 func (z Zone) Valid() bool {
 	switch z {
-	case ZoneWAN, ZoneLAN, ZoneManagement, ZoneDMZ, ZoneCluster, ZoneStorage, ZoneBackup:
+	case ZoneWAN, ZoneLAN, ZoneManagement, ZoneDMZ, ZoneCluster, ZoneStorage, ZoneBackup, ZoneSupportLAN, ZoneSupportWAN:
 		return true
 	default:
 		return false
 	}
+}
+
+func (z Zone) isSupport() bool {
+	return z == ZoneSupportLAN || z == ZoneSupportWAN
 }
 
 // ForwardingIntent captures the minimum authorization inputs for routing
@@ -44,8 +53,12 @@ type ForwardingIntent struct {
 }
 
 // AuthorizeForwarding returns nil only when the requested forwarding is
-// permitted by the 0.6 safety baseline. Same-zone traffic is not considered
-// routed forwarding and therefore does not require an Edge Gateway.
+// permitted by the network safety baseline. Same-zone traffic is not
+// considered routed forwarding and therefore does not require an Edge Gateway.
+// SUPPORT_LAN/SUPPORT_WAN are deliberately non-transit zones in 0.34: their
+// presence models the two independent Support Gateway channels but does not
+// create a generic route, NAT, or forwarding authority between either support
+// channel and any other zone.
 func AuthorizeForwarding(intent ForwardingIntent) error {
 	if !intent.Source.Valid() {
 		return fmt.Errorf("%w: source %q", ErrInvalidZone, intent.Source)
@@ -55,6 +68,9 @@ func AuthorizeForwarding(intent ForwardingIntent) error {
 	}
 	if intent.Source == intent.Destination {
 		return nil
+	}
+	if intent.Source.isSupport() || intent.Destination.isSupport() {
+		return ErrSupportZoneTransitDenied
 	}
 	if !intent.ExplicitlyEnabled {
 		return ErrForwardingDisabled
