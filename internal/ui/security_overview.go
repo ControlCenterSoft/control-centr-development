@@ -15,9 +15,12 @@ import (
 const SecurityOverviewContractVersion = "ui.security-overview/v1"
 
 const (
-	maxSecurityOverviewSessions  = 128
-	maxSecurityOverviewGrants    = 64
-	maxSecurityOverviewUserAgent = 512
+	maxSecurityOverviewSessions    = 128
+	maxSecurityOverviewGrants      = 64
+	maxSecurityOverviewIdentifier  = 255
+	maxSecurityOverviewDisplayName = 512
+	maxSecurityOverviewUserAgent   = 512
+	maxSecurityOverviewSourceIP    = 64
 )
 
 var ErrInvalidSecurityOverview = errors.New("invalid security overview")
@@ -29,14 +32,28 @@ const (
 	FirstLoginCompleteOrNotRequired FirstLoginState = "complete_or_not_required"
 )
 
+type PasswordLifecycleState string
+
+const (
+	PasswordLifecycleChangeRequired PasswordLifecycleState = "change_required"
+	PasswordLifecycleActive         PasswordLifecycleState = "active"
+)
+
 type SecurityOverviewInput struct {
 	Identity               auth.Identity
 	PasswordChangeRequired bool
+	PasswordChangedAt      time.Time
 	CurrentSessionID       string
 	Sessions               []auth.SessionSecurityView
 	SessionPolicy          auth.SessionSecurityPolicyView
 	Grants                 []rbac.EffectiveGrant
 	Now                    time.Time
+}
+
+type PasswordLifecycleView struct {
+	State          PasswordLifecycleState `json:"state"`
+	ChangedAt      time.Time              `json:"changed_at"`
+	ChangeRequired bool                   `json:"change_required"`
 }
 
 type SecurityOverviewView struct {
@@ -47,6 +64,7 @@ type SecurityOverviewView struct {
 	MutationAuthorized     bool                           `json:"mutation_authorized"`
 	FirstLogin             FirstLoginState                `json:"first_login"`
 	PasswordChangeRequired bool                           `json:"password_change_required"`
+	PasswordLifecycle      PasswordLifecycleView          `json:"password_lifecycle"`
 	SessionPolicy          auth.SessionSecurityPolicyView `json:"session_policy"`
 	SessionCount           int                            `json:"session_count"`
 	CurrentSessionID       string                         `json:"current_session_id"`
@@ -70,8 +88,9 @@ type SecuritySessionView struct {
 }
 
 // BuildSecurityOverview projects only the authenticated subject's existing
-// identity, session and RBAC evidence into a deterministic read model for the
-// 0.33 Security/Identity UI. It never grants mutation or authorization.
+// identity, password-lifecycle, session and RBAC evidence into a deterministic
+// read model for the 0.33 Security/Identity UI. It never grants mutation or
+// authorization.
 func BuildSecurityOverview(input SecurityOverviewInput) (SecurityOverviewView, error) {
 	if input.Now.IsZero() {
 		return SecurityOverviewView{}, invalidSecurityOverview("current time is required")
@@ -81,10 +100,14 @@ func BuildSecurityOverview(input SecurityOverviewInput) (SecurityOverviewView, e
 	if err != nil {
 		return SecurityOverviewView{}, err
 	}
-	currentSessionID := strings.TrimSpace(input.CurrentSessionID)
-	if currentSessionID == "" || currentSessionID != input.CurrentSessionID {
-		return SecurityOverviewView{}, invalidSecurityOverview("current session id must be canonical")
+	passwordLifecycle, err := projectPasswordLifecycle(identity, input.PasswordChangedAt, input.PasswordChangeRequired, now)
+	if err != nil {
+		return SecurityOverviewView{}, err
 	}
+	if err := validateCanonicalSecurityText("current session id", input.CurrentSessionID, maxSecurityOverviewIdentifier, true); err != nil {
+		return SecurityOverviewView{}, err
+	}
+	currentSessionID := input.CurrentSessionID
 	if err := validateSecurityOverviewPolicy(input.SessionPolicy); err != nil {
 		return SecurityOverviewView{}, err
 	}
@@ -122,6 +145,7 @@ func BuildSecurityOverview(input SecurityOverviewInput) (SecurityOverviewView, e
 		MutationAuthorized:     false,
 		FirstLogin:             firstLogin,
 		PasswordChangeRequired: input.PasswordChangeRequired,
+		PasswordLifecycle:      passwordLifecycle,
 		SessionPolicy:          input.SessionPolicy,
 		SessionCount:           len(sessions),
 		CurrentSessionID:       currentSessionID,
@@ -135,20 +159,39 @@ func BuildSecurityOverview(input SecurityOverviewInput) (SecurityOverviewView, e
 }
 
 func validateSecurityOverviewIdentity(identity auth.Identity, now time.Time) (auth.Identity, error) {
-	if strings.TrimSpace(identity.ID) == "" || identity.ID != strings.TrimSpace(identity.ID) {
-		return auth.Identity{}, invalidSecurityOverview("identity id must be canonical")
+	if err := validateCanonicalSecurityText("identity id", identity.ID, maxSecurityOverviewIdentifier, true); err != nil {
+		return auth.Identity{}, err
 	}
-	if strings.TrimSpace(identity.Username) == "" || identity.Username != strings.TrimSpace(identity.Username) {
-		return auth.Identity{}, invalidSecurityOverview("username must be canonical")
+	if err := validateCanonicalSecurityText("username", identity.Username, maxSecurityOverviewIdentifier, true); err != nil {
+		return auth.Identity{}, err
 	}
-	if identity.DisplayName != "" && identity.DisplayName != strings.TrimSpace(identity.DisplayName) {
-		return auth.Identity{}, invalidSecurityOverview("display name must be canonical when present")
+	if err := validateCanonicalSecurityText("display name", identity.DisplayName, maxSecurityOverviewDisplayName, false); err != nil {
+		return auth.Identity{}, err
 	}
 	if identity.CreatedAt.IsZero() || identity.CreatedAt.After(now) {
 		return auth.Identity{}, invalidSecurityOverview("identity creation timestamp is invalid")
 	}
 	identity.CreatedAt = identity.CreatedAt.UTC()
 	return identity, nil
+}
+
+func projectPasswordLifecycle(identity auth.Identity, changedAt time.Time, changeRequired bool, now time.Time) (PasswordLifecycleView, error) {
+	if changedAt.IsZero() {
+		return PasswordLifecycleView{}, invalidSecurityOverview("password changed timestamp is required")
+	}
+	changedAt = changedAt.UTC()
+	if changedAt.Before(identity.CreatedAt) || changedAt.After(now) {
+		return PasswordLifecycleView{}, invalidSecurityOverview("password changed timestamp is outside the identity lifetime")
+	}
+	state := PasswordLifecycleActive
+	if changeRequired {
+		state = PasswordLifecycleChangeRequired
+	}
+	return PasswordLifecycleView{
+		State:          state,
+		ChangedAt:      changedAt,
+		ChangeRequired: changeRequired,
+	}, nil
 }
 
 func validateSecurityOverviewPolicy(policy auth.SessionSecurityPolicyView) error {
@@ -169,10 +212,10 @@ func normalizeSecurityOverviewSessions(sources []auth.SessionSecurityView, curre
 	seen := make(map[string]struct{}, len(sources))
 	currentMatches := 0
 	for _, source := range sources {
-		id := strings.TrimSpace(source.ID)
-		if id == "" || id != source.ID {
-			return nil, invalidSecurityOverview("session id must be canonical")
+		if err := validateCanonicalSecurityText("session id", source.ID, maxSecurityOverviewIdentifier, true); err != nil {
+			return nil, err
 		}
+		id := source.ID
 		if _, exists := seen[id]; exists {
 			return nil, invalidSecurityOverview("duplicate session %q", id)
 		}
@@ -196,13 +239,14 @@ func normalizeSecurityOverviewSessions(sources []auth.SessionSecurityView, curre
 		if source.Current {
 			currentMatches++
 		}
-		sourceIP := strings.TrimSpace(source.SourceIP)
-		if sourceIP != "" && net.ParseIP(sourceIP) == nil {
+		if err := validateCanonicalSecurityText("session source ip", source.SourceIP, maxSecurityOverviewSourceIP, false); err != nil {
+			return nil, err
+		}
+		if source.SourceIP != "" && net.ParseIP(source.SourceIP) == nil {
 			return nil, invalidSecurityOverview("session %q source ip is invalid", id)
 		}
-		userAgent := strings.TrimSpace(source.UserAgent)
-		if len(userAgent) > maxSecurityOverviewUserAgent {
-			return nil, invalidSecurityOverview("session %q user agent exceeds %d bytes", id, maxSecurityOverviewUserAgent)
+		if err := validateCanonicalSecurityText("session user agent", source.UserAgent, maxSecurityOverviewUserAgent, false); err != nil {
+			return nil, err
 		}
 		out = append(out, SecuritySessionView{
 			ID:             id,
@@ -210,8 +254,8 @@ func normalizeSecurityOverviewSessions(sources []auth.SessionSecurityView, curre
 			LastActivityAt: lastActivityAt,
 			IdleExpiresAt:  idleExpiresAt,
 			ExpiresAt:      expiresAt,
-			SourceIP:       sourceIP,
-			UserAgent:      userAgent,
+			SourceIP:       source.SourceIP,
+			UserAgent:      source.UserAgent,
 			Current:        source.Current,
 		})
 	}
@@ -236,10 +280,16 @@ func normalizeSecurityOverviewGrants(sources []rbac.EffectiveGrant) ([]rbac.Effe
 	effectivePermissions := make(map[rbac.Permission]struct{})
 	hasWildcard := false
 	for _, source := range sources {
-		roleName := strings.TrimSpace(source.RoleName)
-		if roleName == "" || roleName != source.RoleName || !source.Scope.Valid() {
-			return nil, 0, false, invalidSecurityOverview("effective grant has invalid role or scope")
+		if err := validateCanonicalSecurityText("effective grant role", source.RoleName, maxSecurityOverviewIdentifier, true); err != nil {
+			return nil, 0, false, err
 		}
+		if !source.Scope.Valid() {
+			return nil, 0, false, invalidSecurityOverview("effective grant has invalid scope")
+		}
+		if err := validateCanonicalSecurityText("effective grant scope id", source.Scope.ID, maxSecurityOverviewIdentifier, source.Scope.Kind != rbac.ScopeGlobal); err != nil {
+			return nil, 0, false, err
+		}
+		roleName := source.RoleName
 		grantKey := roleName + "\x00" + string(source.Scope.Kind) + "\x00" + source.Scope.ID
 		if _, exists := seenGrants[grantKey]; exists {
 			return nil, 0, false, invalidSecurityOverview("duplicate effective grant for role %q", roleName)
@@ -251,8 +301,8 @@ func normalizeSecurityOverviewGrants(sources []rbac.EffectiveGrant) ([]rbac.Effe
 		permissions := make([]rbac.Permission, 0, len(source.Permissions))
 		seenPermissions := make(map[rbac.Permission]struct{}, len(source.Permissions))
 		for _, permission := range source.Permissions {
-			if strings.TrimSpace(string(permission)) == "" || string(permission) != strings.TrimSpace(string(permission)) {
-				return nil, 0, false, invalidSecurityOverview("effective grant %q contains an invalid permission", roleName)
+			if err := validateCanonicalSecurityText("effective permission", string(permission), maxSecurityOverviewIdentifier, true); err != nil {
+				return nil, 0, false, err
 			}
 			if _, exists := seenPermissions[permission]; exists {
 				return nil, 0, false, invalidSecurityOverview("effective grant %q contains duplicate permission %q", roleName, permission)
@@ -277,6 +327,21 @@ func normalizeSecurityOverviewGrants(sources []rbac.EffectiveGrant) ([]rbac.Effe
 		return out[i].RoleName < out[j].RoleName
 	})
 	return out, len(effectivePermissions), hasWildcard, nil
+}
+
+func validateCanonicalSecurityText(name, value string, max int, required bool) error {
+	if value == "" && !required {
+		return nil
+	}
+	if strings.TrimSpace(value) == "" || value != strings.TrimSpace(value) || len(value) > max {
+		return invalidSecurityOverview("%s is not canonical or exceeds the bound", name)
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return invalidSecurityOverview("%s contains a control character", name)
+		}
+	}
+	return nil
 }
 
 func invalidSecurityOverview(format string, values ...any) error {
