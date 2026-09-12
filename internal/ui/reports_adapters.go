@@ -53,7 +53,7 @@ func BuildHealthOperationalReport(now time.Time, overview HealthOverview) (Opera
 		}
 
 		inputs = append(inputs, ReportEvidenceInput{
-			ID:            "health:" + signal.ID,
+			ID:            healthReportEvidenceID(signal),
 			Kind:          "health",
 			ResourceKind:  signal.ResourceKind,
 			ResourceID:    signal.ResourceID,
@@ -163,6 +163,12 @@ func incidentReportState(incident incidents.Incident) ReportHealthState {
 	default:
 		return ReportHealthUnknown
 	}
+}
+
+func healthReportEvidenceID(signal HealthSignalView) string {
+	parts := []string{signal.ID, signal.ResourceKind, signal.ResourceID, signal.CheckName}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "health:" + hex.EncodeToString(sum[:])
 }
 
 func incidentReportDigest(incident incidents.Incident) string {
