@@ -11,11 +11,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const (
 	DefaultReadLimit = 50
 	MaxReadLimit     = 100
+	MinSearchRunes   = 3
+	MaxSearchRunes   = 128
+	MaxSearchWindow  = 31 * 24 * time.Hour
 )
 
 type Event struct {
@@ -39,6 +43,9 @@ type Query struct {
 	Outcome          string
 	ActorID          string
 	SubjectID        string
+	Search           string
+	From             time.Time
+	To               time.Time
 }
 
 type Entry struct {
@@ -129,6 +136,7 @@ func NormalizeQuery(query Query) (Query, error) {
 	query.Outcome = strings.TrimSpace(query.Outcome)
 	query.ActorID = strings.TrimSpace(query.ActorID)
 	query.SubjectID = strings.TrimSpace(query.SubjectID)
+	query.Search = strings.TrimSpace(query.Search)
 	if len(query.Action) > 192 {
 		return Query{}, fmt.Errorf("audit action filter is too long")
 	}
@@ -138,14 +146,69 @@ func NormalizeQuery(query Query) (Query, error) {
 	if len(query.ActorID) > 128 || len(query.SubjectID) > 256 {
 		return Query{}, fmt.Errorf("audit identity filter is too long")
 	}
+	if query.Search != "" {
+		searchRunes := utf8.RuneCountInString(query.Search)
+		if searchRunes < MinSearchRunes || searchRunes > MaxSearchRunes {
+			return Query{}, fmt.Errorf("audit search must be between %d and %d characters", MinSearchRunes, MaxSearchRunes)
+		}
+		if query.From.IsZero() || query.To.IsZero() {
+			return Query{}, fmt.Errorf("audit search requires both from and to bounds")
+		}
+	}
+	if !query.From.IsZero() {
+		query.From = query.From.UTC().Truncate(time.Microsecond)
+	}
+	if !query.To.IsZero() {
+		query.To = query.To.UTC().Truncate(time.Microsecond)
+	}
+	if !query.From.IsZero() && !query.To.IsZero() {
+		if !query.From.Before(query.To) {
+			return Query{}, fmt.Errorf("audit from bound must be before to bound")
+		}
+		if query.Search != "" && query.To.Sub(query.From) > MaxSearchWindow {
+			return Query{}, fmt.Errorf("audit search window must not exceed %s", MaxSearchWindow)
+		}
+	}
 	return query, nil
 }
 
 func queryMatches(event Event, query Query) bool {
-	return (query.Action == "" || event.Action == query.Action) &&
-		(query.Outcome == "" || event.Outcome == query.Outcome) &&
-		(query.ActorID == "" || event.ActorID == query.ActorID) &&
-		(query.SubjectID == "" || event.SubjectID == query.SubjectID)
+	if !query.From.IsZero() && event.OccurredAt.Before(query.From) {
+		return false
+	}
+	if !query.To.IsZero() && event.OccurredAt.After(query.To) {
+		return false
+	}
+	if query.Action != "" && event.Action != query.Action {
+		return false
+	}
+	if query.Outcome != "" && event.Outcome != query.Outcome {
+		return false
+	}
+	if query.ActorID != "" && event.ActorID != query.ActorID {
+		return false
+	}
+	if query.SubjectID != "" && event.SubjectID != query.SubjectID {
+		return false
+	}
+	if query.Search == "" {
+		return true
+	}
+	needle := strings.ToLower(query.Search)
+	for _, value := range []string{
+		event.ID,
+		event.Action,
+		event.Outcome,
+		event.ActorID,
+		event.SubjectID,
+		event.SourceIP,
+		event.CorrelationID,
+	} {
+		if strings.Contains(strings.ToLower(value), needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func Prepare(event Event, previousHash string) (Event, error) {
