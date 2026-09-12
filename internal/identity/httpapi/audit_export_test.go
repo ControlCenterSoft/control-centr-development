@@ -3,12 +3,10 @@ package httpapi
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"control-center/internal/identity/audit"
-	"control-center/internal/identity/rbac"
 )
 
 func TestAuditEventsExportIsPermissionBoundPrivateAndAudited(t *testing.T) {
@@ -21,16 +19,7 @@ func TestAuditEventsExportIsPermissionBoundPrivateAndAudited(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := fixture.server.Authenticate(
-		fixture.server.Require(rbac.PermissionAuditRead, rbac.GlobalScope())(
-			http.HandlerFunc(fixture.server.auditEventsExport),
-		),
-	)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/audit/events/export?action=security.export-test&limit=10", nil)
-	request.AddCookie(cookie)
-	result := httptest.NewRecorder()
-	handler.ServeHTTP(result, request)
-
+	result := fixture.get(t, cookie, "/api/v1/audit/events/export?action=security.export-test&limit=10")
 	if result.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", result.Code, result.Body.String())
 	}
@@ -62,6 +51,22 @@ func TestAuditEventsExportIsPermissionBoundPrivateAndAudited(t *testing.T) {
 	}
 }
 
+func TestAuditEventsExportRouteRequiresPermissionAndCurrentPassword(t *testing.T) {
+	fixture := newAuditEventsFixture(t)
+
+	viewer := fixture.login(t, "viewer-audit", "a secure test password")
+	viewerResult := fixture.get(t, viewer, "/api/v1/audit/events/export")
+	if viewerResult.Code != http.StatusForbidden || !strings.Contains(viewerResult.Body.String(), "permission_denied") {
+		t.Fatalf("viewer status=%d body=%s", viewerResult.Code, viewerResult.Body.String())
+	}
+
+	admin := fixture.login(t, "admin-audit", "admin")
+	adminResult := fixture.get(t, admin, "/api/v1/audit/events/export")
+	if adminResult.Code != http.StatusForbidden || !strings.Contains(adminResult.Body.String(), "password_change_required") {
+		t.Fatalf("bootstrap admin status=%d body=%s", adminResult.Code, adminResult.Body.String())
+	}
+}
+
 func TestAuditEventsExportDoesNotDiscloseBytesWhenEvidenceCannotBeRecorded(t *testing.T) {
 	fixture := newAuditEventsFixture(t)
 	cookie := fixture.login(t, "auditor", "a secure test password")
@@ -72,16 +77,7 @@ func TestAuditEventsExportDoesNotDiscloseBytesWhenEvidenceCannotBeRecorded(t *te
 	}
 	fixture.server.audit = failingAuditLogger{}
 
-	handler := fixture.server.Authenticate(
-		fixture.server.Require(rbac.PermissionAuditRead, rbac.GlobalScope())(
-			http.HandlerFunc(fixture.server.auditEventsExport),
-		),
-	)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/audit/events/export?action=security.export-sensitive", nil)
-	request.AddCookie(cookie)
-	result := httptest.NewRecorder()
-	handler.ServeHTTP(result, request)
-
+	result := fixture.get(t, cookie, "/api/v1/audit/events/export?action=security.export-sensitive")
 	if result.Code != http.StatusServiceUnavailable || !strings.Contains(result.Body.String(), "audit_evidence_unavailable") {
 		t.Fatalf("status=%d body=%s", result.Code, result.Body.String())
 	}
@@ -93,15 +89,7 @@ func TestAuditEventsExportDoesNotDiscloseBytesWhenEvidenceCannotBeRecorded(t *te
 func TestAuditEventsExportRejectsAmbiguousQuery(t *testing.T) {
 	fixture := newAuditEventsFixture(t)
 	cookie := fixture.login(t, "auditor", "a secure test password")
-	handler := fixture.server.Authenticate(
-		fixture.server.Require(rbac.PermissionAuditRead, rbac.GlobalScope())(
-			http.HandlerFunc(fixture.server.auditEventsExport),
-		),
-	)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/audit/events/export?limit=10&limit=20", nil)
-	request.AddCookie(cookie)
-	result := httptest.NewRecorder()
-	handler.ServeHTTP(result, request)
+	result := fixture.get(t, cookie, "/api/v1/audit/events/export?limit=10&limit=20")
 	if result.Code != http.StatusBadRequest || !strings.Contains(result.Body.String(), "invalid_audit_query") {
 		t.Fatalf("status=%d body=%s", result.Code, result.Body.String())
 	}

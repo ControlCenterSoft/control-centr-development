@@ -1,17 +1,17 @@
 # Control Center 0.32 — bounded Audit CSV export
 
-Статус: **SOURCE-ONLY / NOT ROUTE-ACTIVE / NOT RELEASE QUALIFIED**.
+Статус: **0.32 DEVELOPMENT — ROUTE ACTIVATION SLICE / NOT PUBLIC STABLE**.
 
-Этот документ описывает подготовленный исходный slice для milestone 0.32 `Health / Incidents / Audit / Reports`. Он не меняет Public Stable, не открывает новый route в runtime и не является доказательством готовности релиза. Активация выполняется только после отдельной qualification в runner-потоке и интеграционной проверки exact head.
+Этот документ описывает bounded Audit CSV export для milestone 0.32 `Health / Incidents / Audit / Reports`. Source builder/handler уже прошли отдельную qualification; текущий activation slice подключает endpoint к cumulative Identity/RBAC server и production identity wiring только после нового exact-head Public CI. Само наличие route в development `main` не является заявлением о готовности 0.32 к Public Stable.
 
 ## Назначение
 
 Audit export нужен для ограниченной выгрузки уже доступной оператору части append-only Audit без превращения Control Center в средство массового экспорта чувствительных данных. Экспорт использует те же точные фильтры и opaque cursor, что и существующее чтение `GET /api/v1/audit/events`, и не расширяет область полномочий.
 
-Подготовленный source contract:
+Контракт:
 
 - endpoint: `GET /api/v1/audit/events/export`;
-- draft permission boundary: существующий global `audit.events.read`;
+- permission boundary: существующий global `audit.events.read`;
 - first-login password change должен быть завершён до доступа;
 - `limit` — от 1 до 100, default 50;
 - один запрос экспортирует только одну bounded page, а не весь журнал;
@@ -37,31 +37,33 @@ Hash-chain evidence (`previous_hash`, `hash`) сохраняется в CSV, ч�
 
 Если журнал недоступен, построение export не прошло validation либо Audit evidence нельзя записать, ответ — `503`; CSV не выдаётся. Это исключает privileged read/export без собственной аудируемой записи.
 
-## Source composition
+## Runtime composition
 
-Подготовлены:
+Компоненты:
 
 - `internal/identity/audit/export.go` — deterministic bounded CSV builder;
-- `internal/identity/audit/export_test.go` — negative/privacy/formula/bounds test source;
-- `internal/identity/httpapi/audit_export.go` — fail-closed handler source;
-- `internal/identity/httpapi/audit_export_test.go` — permission/evidence/disclosure negative-path test source;
-- `api/openapi-audit-export-0.32.yaml` — source-only API contract.
+- `internal/identity/audit/export_test.go` — negative/privacy/formula/bounds coverage;
+- `internal/identity/httpapi/audit_export.go` — fail-closed handler;
+- `internal/identity/httpapi/audit_export_route.go` — cumulative server route activation;
+- `internal/identity/httpapi/audit_export_test.go` — reachable-route permission/evidence/disclosure negative-path coverage;
+- `api/openapi-audit-export-0.32.yaml` — API contract;
+- `cmd/control-center/identity.go` — production identity server uses the cumulative constructor with Audit export enabled.
 
-Handler намеренно **не зарегистрирован** в `Server.routes()`. Поэтому текущий runtime и Public Stable не получают новый reachable endpoint от этой source-подготовки.
+Route activation не создаёт нового permission и не ослабляет existing `Authenticate → password-current → audit.events.read/global` boundary.
 
-## Что должен выполнить runner-поток до интеграции
+## Qualification boundary
 
-Перед route activation и любым release claim требуется отдельная квалификация exact head:
+Перед интеграцией activation slice exact head обязан пройти штатный Public CI без переноса PASS со source-only head:
 
-1. форматирование/compile/unit tests для `internal/identity/audit` и `internal/identity/httpapi`;
-2. существующие Audit read/integrity/PostgreSQL regression tests;
-3. OpenAPI/schema validation;
-4. negative paths: unauthenticated, first-login password change required, permission denied, invalid/repeated/unbounded query;
-5. подтверждение, что failure записи `audit.events_export` не выдаёт ни одного CSV byte;
-6. no-secret/privacy checks, включая top-level и nested IP minimization;
-7. CSV/spreadsheet formula-injection regression checks;
-8. после успешной qualification — отдельное решение об интеграции route и повторная qualification нового exact head.
+1. formatting/vet/build/unit-contract;
+2. PostgreSQL 15–18 clean-install/supported-upgrade/adapters и restart/race qualification;
+3. существующие Audit read/integrity regressions;
+4. reachable-route negative paths: unauthenticated, first-login password change required, permission denied, invalid/repeated/unbounded query;
+5. подтверждение, что failure записи `audit.events_export` не выдаёт CSV bytes;
+6. no-secret/privacy checks, включая IP minimization;
+7. CSV/spreadsheet formula-injection checks;
+8. exact post-merge `main` qualification после интеграции.
 
 ## Границы
 
-Этот slice не создаёт bulk export, background export job, scheduled report, upload во внешний сервис, generic file writer или новый permission. Он не меняет Audit retention, не предоставляет mutation authority и не относится к версиям позже 0.33. Любое расширение за эти границы требует отдельного решения в рамках актуального Roadmap.
+Этот slice не создаёт bulk export, background export job, scheduled report, upload во внешний сервис, generic file writer или новый permission. Он не меняет Audit retention, не предоставляет mutation authority, не меняет Public Stable 0.31.0 и не является самостоятельным release claim. Любое расширение за эти границы требует отдельного решения в рамках актуального Roadmap.
