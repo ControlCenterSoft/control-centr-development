@@ -1,123 +1,172 @@
 # Control Center 0.32 — Incident persistence and operator mutations
 
-Status: implementation slice for the 0.32 Incidents / Status / Reports line. It builds on the existing incident domain/query contract and intentionally stays inside the 0.32 release boundary.
+Status: source-only implementation slice for the 0.32 Incidents / Status / Reports line. It stays inside the 0.32 release boundary and is prepared on `work/cc032-incidents-operator-service-nr1-20260912` for later runner qualification.
 
 ## Implemented persistence boundary
 
-This slice adds PostgreSQL persistence for the validated `internal/incidents` read model:
+The slice provides PostgreSQL persistence for the validated `internal/incidents` read model:
 
 - migration `0013_incident_read_models` with constrained mirrored query columns and JSONB canonical document storage;
 - affected-resource index for bounded resource filtering;
 - atomic create/replace of the incident document and its resource index;
 - optimistic-concurrency replacement using `ObjectPrecondition` plus `ValidateSuccessor` generation/resource-version semantics;
 - fail-closed read verification: mirrored columns must exactly match the validated JSON document;
-- bounded newest-first list queries with the same keyset pagination and exact filters defined by `incidents.ListQuery`;
-- one-extra-row pagination instead of an unbounded count query;
-- explicit `MutationWriter` / `MutationRepository` contract for authenticated operator adapters.
+- bounded newest-first list queries with deterministic keyset pagination and exact filters;
+- one-extra-row pagination instead of an unbounded count query.
 
 ## Implemented operator mutation preparation
 
-`internal/incidents/mutation.go` prepares side-effect-free, optimistic-concurrency-guarded operator mutations without performing authorization or persistence itself:
+`internal/incidents/mutation.go` prepares side-effect-free, optimistic-concurrency-guarded operator mutations:
 
 - **acknowledge**: only `open -> acknowledged`, actor-bound, bounded optional note, timeline event, generation/resource-version successor validation;
 - **resolve**: only `acknowledged -> resolved`, mandatory resolution text, optional bounded evidence references, terminal timeline event and rejection of future-dated evidence;
-- **runbook/evidence metadata update**: allowed only before resolution, append-only evidence identities, conflicting evidence rebinding rejected, exact evidence repeats ignored, runbook update plus operator timeline note;
-- resolved incident metadata is immutable through this mutation path;
-- evidence/runbook annotation advances `resource_version` but keeps lifecycle `generation` stable; acknowledge/resolve are semantic lifecycle changes and increment generation;
-- every prepared mutation carries the exact `ObjectPrecondition` that persistence must validate atomically.
+- **runbook/evidence metadata update**: allowed only before resolution, append-only evidence identities, conflicting evidence rebinding rejected, exact evidence repeats ignored;
+- resolved incident metadata is immutable through this path;
+- evidence/runbook annotation advances `resource_version` but keeps lifecycle `generation` stable; acknowledge/resolve increment generation;
+- every prepared mutation carries the exact `ObjectPrecondition` that persistence revalidates atomically.
 
-The mutation helpers clone nested slices/pointers before modification so a failed or successful preparation cannot mutate the caller's current read model in memory.
+Nested slices/pointers are cloned before modification so preparation cannot mutate the caller's current read model.
 
-## Implemented operator admission service
+## Implemented authenticated operator service
 
-`internal/incidents/operator.go` adds the source-only authenticated application boundary above the read model and mutation preparation layer.
+`internal/incidents/operator.go` provides the application boundary above the read model and mutation layer.
 
-- actor identity is a server-side argument and is never accepted from a mutation payload;
-- application capabilities are explicit and bounded: read, list, acknowledge, resolve and evidence/runbook update;
-- access/step-up policy is injected through one fail-closed interface so runtime wiring can map it to persisted RBAC and purpose-bound MFA without creating a second authorization store;
-- object reads collapse authorization denial to `incident not found`, preventing incident-ID enumeration;
-- list policy is evaluated **before** storage access; every returned object is then re-authorized, and a policy/storage scope mismatch fails the complete page instead of filtering rows and leaking counts/cursor information;
-- clients cannot choose the next `resource_version`; a server-side generator supplies the opaque successor token;
-- every mutation is prepared against the exact current `ObjectPrecondition` and rechecks object/scope identity before commit;
-- free-form operator note/resolution/evidence payloads are deliberately excluded from the bounded Audit record;
-- mutation persistence and immutable Audit evidence are represented by one `AtomicMutationCommitter` boundary. Runtime storage must commit both atomically; an Audit failure must never expose a successful incident mutation.
+- actor identity is a server-side argument and is never accepted from a request payload;
+- capabilities are explicit and bounded: read, list, acknowledge, resolve and evidence/runbook update;
+- authorization is injected through one fail-closed `OperatorAccessPolicy` contract;
+- object reads collapse authorization denial to `not found` to avoid an incident-ID oracle;
+- list authorization runs before storage access, and every returned object is re-authorized;
+- clients cannot choose the next `resource_version`;
+- every mutation is bound to the exact current object/scope/revision before commit;
+- free-form note/resolution/evidence payloads are excluded from the immutable security Audit record;
+- mutation persistence and Audit evidence share one `AtomicMutationCommitter` boundary.
 
-This service still grants no production authority by itself. A missing reader, policy, resource-version generator or atomic committer fails closed.
+## Implemented RBAC and authenticated HTTP composition
 
-## Implemented source-only HTTP boundary
+The source now has a concrete bridge to the existing Control Center identity and RBAC model instead of a parallel authorization store.
 
-`internal/incidents/httpapi` exposes a bounded adapter contract without wiring it into the production runtime:
+`internal/incidents/rbac_policy.go`:
 
-- read routes for bounded incident list and exact incident lookup;
-- operator routes for acknowledge, resolve and evidence/runbook annotation;
-- actor identity is supplied only by an injected authenticated-request resolver; client JSON cannot select `actor_id`;
-- mutation `occurred_at` is generated by the server clock rather than accepted from the client;
-- mutation payloads require `application/json`, are capped at 64 KiB, reject unknown fields, trailing values and duplicate JSON keys at any nesting level;
-- list query parameters are allowlisted and normalized through the canonical `incidents.ListQuery` contract;
-- mutation requests cannot carry query parameters;
-- step-up-required, stale/precondition conflict, validation, not-found, authorization and dependency-unavailable states map to explicit bounded HTTP errors;
-- every JSON response is `no-store` and `nosniff`.
+- maps incident read/list to existing `resources.read`;
+- maps acknowledge/resolve/evidence mutation to existing `core.objects.write`;
+- resolves incident scopes through a fail-closed `RBACScopeResolver`;
+- requires a global grant for an unscoped list query rather than silently broadening a site grant;
+- returns denial or dependency failure when the exact permission/scope decision cannot be proven.
 
-No route is registered in `cmd/control-center` by this slice. Production authority remains unchanged until persisted RBAC/scope, atomic Audit commit and runtime qualification are complete.
+`internal/identity/httpapi/external_routes.go` and `internal/incidents/httpapi/wiring.go`:
+
+- derive actor identity only from the canonical authenticated session principal;
+- reuse the mandatory first-login password-change gate;
+- expose only the read-only RBAC checker needed by application composition;
+- keep scope authorization in `OperatorService`, after authentication but before reads/mutations.
+
+The current runtime composition treats incident `ScopeID` as a site RBAC scope. Global bindings continue to authorize through the canonical RBAC semantics. A future topology-aware resolver may support additional scope kinds, but it must not infer or widen scope when mapping is ambiguous.
+
+## Implemented atomic mutation + canonical Audit persistence
+
+`internal/persistence/postgres/incidents_operator.go` implements the concrete durability boundary.
+
+One PostgreSQL transaction now:
+
+1. locks and reads the current incident;
+2. revalidates the exact optimistic-concurrency precondition and successor semantics;
+3. validates that Audit evidence is bound to the same incident, scope, status, generation and resource-version transition;
+4. replaces the incident document and affected-resource index;
+5. acquires the canonical Audit-chain advisory lock;
+6. prepares and appends a metadata-only event to `cc_audit_events` using the existing hash-chain format;
+7. commits only after both the incident mutation and Audit append succeed.
+
+An Audit failure therefore cannot expose a successful incident mutation. No incident-specific competing audit log is introduced.
+
+## Implemented persistence-owned resource versions
+
+`internal/persistence/postgres/incidents_versions.go` provides the concrete `ResourceVersionGenerator`.
+
+- versions use cryptographic OS randomness;
+- values are opaque (`irv-...`) and have no ordering semantics;
+- they contain no host, tenant, actor, timestamp, credential or provider information;
+- invalid current state, unavailable entropy, cancellation or a collision fail closed.
+
+## Implemented runtime route registration
+
+`cmd/control-center/main.go` now composes the 0.32 incident stack from the existing database and identity boundaries:
+
+- PostgreSQL incident repository;
+- canonical RBAC checker + fail-closed incident policy;
+- persistence-owned resource-version generator;
+- atomic incident/Audit committer;
+- authenticated incident HTTP adapter;
+- common request correlation, panic recovery, access logging and security-header middleware;
+- explicit split routing for `/api/v1/incidents` and `/api/v1/incidents/...` only.
+
+The route prefix does not capture lookalike paths such as `/api/v1/incidents-export`.
+
+## HTTP safety contract
+
+`internal/incidents/httpapi` provides:
+
+- bounded list and exact incident lookup;
+- acknowledge, resolve and evidence/runbook annotation routes;
+- actor identity only from the authenticated-request resolver;
+- server-generated mutation timestamps;
+- `application/json` requirement and 64 KiB body cap;
+- rejection of unknown fields, trailing values and duplicate JSON keys at any nesting level;
+- allowlisted/normalized list query parameters;
+- no query parameters on mutation requests;
+- bounded error mapping for step-up, conflict, validation, not-found, authorization and dependency-unavailable states;
+- `no-store` and `nosniff` JSON responses.
 
 ## Security and integrity rules
 
-Persistence and mutation preparation do **not** authorize callers. Runtime/API adapters must check the incident capability using the authenticated principal, derive scope server-side, enforce required step-up/MFA policy and commit immutable audit evidence before exposing a mutation as successful.
+The implementation fails closed when:
 
-The implementation deliberately fails closed when:
-
-- a stored JSON document no longer satisfies the domain contract;
-- indexed columns disagree with the JSON document;
-- an optimistic concurrency precondition no longer matches;
-- a resource version or object ID collides;
-- a generation cannot be represented by PostgreSQL `bigint`;
+- a stored document is invalid or disagrees with indexed columns;
+- an optimistic-concurrency precondition no longer matches;
+- object/scope/revision Audit binding differs from the mutation being committed;
+- a resource version cannot be generated or does not change;
 - an operator attempts an invalid lifecycle transition;
-- evidence metadata attempts to reuse an existing evidence identity with different digest/time/redaction metadata;
-- an evidence reference claims collection after the operator event;
-- a no-op metadata request would only churn `resource_version`;
-- the authorization/step-up decision is unavailable or denied;
-- a list scope returns any object that is not independently visible to the authenticated actor;
-- a next resource version is missing, unchanged or cannot be generated;
-- the atomic mutation+Audit commit fails;
-- HTTP actor resolution, media-type validation or strict JSON validation cannot be proven.
+- evidence metadata attempts conflicting rebinding or future collection time;
+- a no-op metadata request would only churn resource version;
+- identity, RBAC, scope resolution or persistence dependencies are unavailable;
+- list policy and storage scope disagree;
+- the atomic mutation+Audit transaction fails;
+- HTTP actor/media-type/JSON/query validation cannot be proven.
 
-The complete document remains bounded by the domain contract (affected resources, signals, timeline, and evidence counts). Query-critical fields are mirrored only to support indexed filtering; the JSON document remains the authoritative serialized read model.
+Authentication alone never grants incident authority. The existing RBAC database remains authoritative.
 
 ## Migration and rollback
 
-The up migration creates only new 0.32 tables/indexes and does not mutate existing 0.31 data. The down migration removes child resource indexes/tables before the incident table. No existing Control Center table is dropped or rewritten.
+The up migration creates only new 0.32 incident tables/indexes and does not rewrite existing 0.31 data. The down migration removes the new child/index tables before the incident table. Existing Control Center tables remain intact.
 
-The new operator-service/HTTP slice adds no SQL migration. The future concrete atomic Audit committer must reuse the canonical append-only Audit storage and must not introduce a competing incident-specific audit log.
+## Remaining 0.32 integration work
 
-## Follow-up 0.32 integration
+The following is intentionally still separate and remains within the 0.32 boundary:
 
-Still separate from this slice:
-
-- persisted RBAC capability mapping, exact authenticated scope resolver and runtime wiring;
-- concrete PostgreSQL transaction adapter that atomically commits incident replacement plus canonical append-only Audit event;
-- ingestion/correlation write path and immutable audit emission;
+- runner qualification and reconciliation of this work branch with the newer `main` head;
+- purpose-bound step-up/MFA policy where the authoritative security profile requires it;
+- optional narrower persisted incident-specific permissions if approved instead of the current conservative reuse of `resources.read` / `core.objects.write`;
+- ingestion/correlation write path and immutable signal-source evidence;
 - status-page privacy projection;
 - email/webhook notification fan-out;
-- technical report/API export.
+- technical report/API export and UI presentation.
 
-Those layers must consume the incident contracts rather than defining competing structures.
+No work in this slice advances into 0.34 or later.
 
-## Test coverage prepared
+## Prepared tests
 
-Runner-free test source covers acknowledgement successor semantics, stale-precondition rejection, mandatory acknowledgement before resolution, terminal resolution evidence, future-evidence rejection, append-only evidence metadata, stable generation for annotation-only writes, resolved-state immutability, evidence-identity conflict and no-op rejection.
+Runner-free test source now covers, among other cases:
 
-The operator-service test source additionally covers:
+- lifecycle mutation/precondition/evidence semantics;
+- authorization denial and list scope mismatch;
+- server-side actor derivation and mandatory password-change fail-closed behavior;
+- RBAC mapping, scope resolution and unsupported capability rejection;
+- strict HTTP request validation;
+- exact Audit revision binding and unsupported action rejection;
+- opaque resource-version generation and entropy failure;
+- runtime split routing and incident lookalike-path isolation.
 
-- exact capability admission and atomic mutation/Audit binding;
-- authorization denial before revision generation or commit;
-- preservation of a step-up-required decision;
-- no success result when the atomic commit fails;
-- list authorization before storage access;
-- fail-closed list policy/storage scope mismatch;
-- read-denial behavior that does not expose an existing incident identifier.
-
-The HTTP test source covers server-side actor requirement, unknown list-query rejection, rejection of client-supplied actor fields, nested duplicate-key rejection, server-clock mutation time, step-up HTTP mapping and denied-list behavior.
+These tests have been written but were not intentionally launched by this non-runner workstream.
 
 ## CI / runner boundary
 
-This work is prepared only on `work/cc032-incidents-operator-service-nr1-20260912`. No pull request, workflow dispatch, rerun, check rerun, merge, release action, or other intentional runner-triggering operation is part of this slice. Commits use `[skip ci]`; repository push-triggered CI does not target `work/**` branches.
+No pull request, workflow dispatch, rerun, check rerun, merge or release action was performed by this source-only slice. Repository Public CI triggers pushes only for `main`, `release/**`, `develop/**` and `migration/**`, while PR workflows require a pull request. This branch is `work/**` and currently has no open PR. Workflow-run inspection after representative commits returned no runs.
