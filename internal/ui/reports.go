@@ -14,7 +14,7 @@ import (
 
 const (
 	OperationalReportSchema = "ui.operational-report/v1"
-	EvidenceDrawerSchema     = "ui.evidence-drawer/v1"
+	EvidenceDrawerSchema    = "ui.evidence-drawer/v1"
 
 	MaxReportItems        = 1000
 	MaxReportEvidenceRefs = 32
@@ -171,10 +171,10 @@ func BuildEvidenceDrawer(report OperationalReport, resourceKind, resourceID stri
 	if report.MutationAuthorized {
 		return EvidenceDrawer{}, errors.New("report unexpectedly carries mutation authority")
 	}
-	if err := validateBoundedText("resource_kind", resourceKind, 1, 64); err != nil {
+	if err := validateReportBoundedText("resource_kind", resourceKind, 1, 64); err != nil {
 		return EvidenceDrawer{}, err
 	}
-	if err := validateBoundedText("resource_id", resourceID, 1, MaxReportText); err != nil {
+	if err := validateReportBoundedText("resource_id", resourceID, 1, MaxReportText); err != nil {
 		return EvidenceDrawer{}, err
 	}
 
@@ -213,16 +213,16 @@ func BuildEvidenceDrawer(report OperationalReport, resourceKind, resourceID stri
 }
 
 func buildReportEvidence(now time.Time, input ReportEvidenceInput) (ReportEvidence, error) {
-	if err := validateBoundedText("id", input.ID, 1, 128); err != nil {
+	if err := validateReportBoundedText("id", input.ID, 1, 128); err != nil {
 		return ReportEvidence{}, err
 	}
-	if err := validateBoundedText("kind", input.Kind, 1, 64); err != nil {
+	if err := validateReportBoundedText("kind", input.Kind, 1, 64); err != nil {
 		return ReportEvidence{}, err
 	}
-	if err := validateBoundedText("resource_kind", input.ResourceKind, 1, 64); err != nil {
+	if err := validateReportBoundedText("resource_kind", input.ResourceKind, 1, 64); err != nil {
 		return ReportEvidence{}, err
 	}
-	if err := validateBoundedText("resource_id", input.ResourceID, 1, MaxReportText); err != nil {
+	if err := validateReportBoundedText("resource_id", input.ResourceID, 1, MaxReportText); err != nil {
 		return ReportEvidence{}, err
 	}
 	if !validReportState(input.ObservedState) {
@@ -238,12 +238,12 @@ func buildReportEvidence(now time.Time, input ReportEvidenceInput) (ReportEviden
 		return ReportEvidence{}, errors.New("observed_at cannot be in the future")
 	}
 	if input.ReasonCode != "" {
-		if err := validateReasonCode(input.ReasonCode); err != nil {
+		if err := validateReportReasonCode(input.ReasonCode); err != nil {
 			return ReportEvidence{}, err
 		}
 	}
 	if input.RunbookRef != "" {
-		if err := validateBoundedText("runbook_ref", input.RunbookRef, 1, MaxReportText); err != nil {
+		if err := validateReportBoundedText("runbook_ref", input.RunbookRef, 1, MaxReportText); err != nil {
 			return ReportEvidence{}, err
 		}
 	}
@@ -253,7 +253,7 @@ func buildReportEvidence(now time.Time, input ReportEvidenceInput) (ReportEviden
 	refs := make([]string, 0, len(input.EvidenceRefs))
 	refSeen := make(map[string]struct{}, len(input.EvidenceRefs))
 	for _, ref := range input.EvidenceRefs {
-		if err := validateBoundedText("evidence_ref", ref, 1, MaxReportText); err != nil {
+		if err := validateReportBoundedText("evidence_ref", ref, 1, MaxReportText); err != nil {
 			return ReportEvidence{}, err
 		}
 		ref = strings.TrimSpace(ref)
@@ -264,7 +264,7 @@ func buildReportEvidence(now time.Time, input ReportEvidenceInput) (ReportEviden
 		refs = append(refs, ref)
 	}
 	sort.Strings(refs)
-	if input.EvidenceDigest != "" && !validSHA256Digest(input.EvidenceDigest) {
+	if input.EvidenceDigest != "" && !validReportSHA256Digest(input.EvidenceDigest) {
 		return ReportEvidence{}, errors.New("evidence_digest must be sha256:<64 lowercase hex>")
 	}
 
@@ -333,7 +333,7 @@ func validReportFreshness(freshness ReportFreshness) bool {
 	}
 }
 
-func validateReasonCode(value string) error {
+func validateReportReasonCode(value string) error {
 	if len(value) == 0 || len(value) > MaxReportReasonCode {
 		return errors.New("reason_code is outside allowed length")
 	}
@@ -346,7 +346,7 @@ func validateReasonCode(value string) error {
 	return nil
 }
 
-func validateBoundedText(field, value string, minLen, maxLen int) error {
+func validateReportBoundedText(field, value string, minLen, maxLen int) error {
 	trimmed := strings.TrimSpace(value)
 	if len(trimmed) < minLen || len(trimmed) > maxLen {
 		return fmt.Errorf("%s is outside allowed length", field)
@@ -359,7 +359,7 @@ func validateBoundedText(field, value string, minLen, maxLen int) error {
 	return nil
 }
 
-func validSHA256Digest(value string) bool {
+func validReportSHA256Digest(value string) bool {
 	if !strings.HasPrefix(value, "sha256:") || len(value) != len("sha256:")+64 {
 		return false
 	}
