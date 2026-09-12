@@ -3,6 +3,8 @@ package httpapi
 import (
 	"net/http"
 	"strings"
+
+	"control-center/internal/identity/rbac"
 )
 
 // AuthenticatedActorID resolves the server-authenticated Control Center
@@ -22,6 +24,16 @@ func AuthenticatedActorID(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return actorID, true
+}
+
+// AuthorizationChecker exposes the already-configured read-only RBAC decision
+// boundary for composing application services. It does not expose role/binding
+// mutation, persistence internals, or an authorization bypass.
+func (s *Server) AuthorizationChecker() (rbac.Checker, bool) {
+	if s == nil || s.authorizer == nil {
+		return nil, false
+	}
+	return s.authorizer, true
 }
 
 // AuthenticatedCurrentPassword composes an external application handler with
