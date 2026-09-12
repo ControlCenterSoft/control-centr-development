@@ -12,9 +12,9 @@ import (
 func TestBuildHealthOperationalReportPreservesFailClosedFreshness(t *testing.T) {
 	now := time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC)
 	overview, err := BuildHealthOverview(HealthOverviewInput{
-		Loaded: true,
-		Now: now,
-		StaleAfter: 5 * time.Minute,
+		Loaded:       true,
+		Now:          now,
+		StaleAfter:   5 * time.Minute,
 		ExpiredAfter: 20 * time.Minute,
 		Signals: []HealthSignal{{
 			ID: "readyz-node-1", ResourceKind: "node", ResourceID: "node-1",
@@ -164,7 +164,7 @@ func reportTestIncident(status incidents.Status, severity incidents.Severity) in
 			ID: "signal-report-1", Kind: "readiness", Source: "core-health", ObservedAt: observed,
 			Summary: "Проверка состояния узла", Evidence: []incidents.EvidenceRef{evidence},
 		}},
-		Runbook: &incidents.RunbookRef{ID: "node-readiness", Revision: "v1"},
+		Runbook:  &incidents.RunbookRef{ID: "node-readiness", Revision: "v1"},
 		Evidence: []incidents.EvidenceRef{evidence},
 		Timeline: []incidents.TimelineEntry{
 			{Kind: incidents.TimelineOpened, At: started},
