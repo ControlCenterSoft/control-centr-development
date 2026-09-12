@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://control-center.pro/schemas/control-center.commercial-legal-disposition.v1.json",
+  "title": "Control Center 0.31 Commercial Legal Disposition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "candidate_version",
+    "candidate_sha",
+    "decision",
+    "legal_entity",
+    "licensor",
+    "governing_law",
+    "market_scope",
+    "customer_model",
+    "authority_id",
+    "approved_at",
+    "evidence"
+  ],
+  "properties": {
+    "schema": {
+      "const": "control-center.commercial-legal-disposition.v1"
+    },
+    "candidate_version": {
+      "const": "0.31.0"
+    },
+    "candidate_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "decision": {
+      "const": "approved"
+    },
+    "legal_entity": {
+      "$ref": "#/$defs/canonicalText"
+    },
+    "licensor": {
+      "$ref": "#/$defs/canonicalText"
+    },
+    "governing_law": {
+      "$ref": "#/$defs/canonicalText"
+    },
+    "market_scope": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/canonicalText"
+      }
+    },
+    "customer_model": {
+      "enum": ["b2b", "b2c", "b2b_b2c"]
+    },
+    "authority_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "approved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": {
+        "$ref": "#/$defs/evidenceRef"
+      }
+    }
+  },
+  "$defs": {
+    "canonicalText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "evidenceKind": {
+      "enum": [
+        "legal_entity_authority",
+        "governing_law_market_scope",
+        "eula",
+        "terms",
+        "privacy",
+        "support_policy",
+        "sla",
+        "licensing_model",
+        "pricing_billing_refund",
+        "qualified_legal_review",
+        "security_privacy_disposition"
+      ]
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "revision", "digest"],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/evidenceKind"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^\\S(?:.*\\S)?$"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}
