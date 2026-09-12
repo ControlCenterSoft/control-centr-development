@@ -43,8 +43,55 @@ jobs:
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "notes=$notes" >> "$GITHUB_OUTPUT"
 
+      - name: Detect already-published immutable release
+        id: existing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo 'published=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'published=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify already-published release remains immutable
+        if: steps.existing.outputs.published == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
+          tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
+          python3 - "$RELEASE_TAG" "$tag_sha" "$release_json" <<'PY'
+          import json, re, sys
+          tag, tag_sha, raw = sys.argv[1:]
+          data = json.loads(raw)
+          if data.get("tag_name") != tag or data.get("draft") is not False or data.get("prerelease") is not False:
+              raise SystemExit("published_release_not_stable")
+          if re.fullmatch(r"[0-9a-f]{40}", tag_sha) is None:
+              raise SystemExit("published_release_tag_identity_invalid")
+          print(f"PUBLISHED_RELEASE_IMMUTABLE={tag}@{tag_sha}")
+          PY
+
+      - name: Require a version-specific automatic publication gate
+        if: steps.existing.outputs.published != 'true'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_VERSION" != '0.31.0' ]]; then
+            echo "Automatic publication gate is not yet defined for Control Center ${RELEASE_VERSION}; refusing publication" >&2
+            exit 1
+          fi
+
       - name: Download exact 0.31 release evidence
-        if: steps.release.outputs.version == '0.31.0'
+        if: steps.existing.outputs.published != 'true' && steps.release.outputs.version == '0.31.0'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -61,14 +108,14 @@ jobs:
           test -f dist/public-stable-evidence/control-center-0.31.0.readiness.json
 
       - name: Set up Go for 0.31 Stable gate
-        if: steps.release.outputs.version == '0.31.0'
+        if: steps.existing.outputs.published != 'true' && steps.release.outputs.version == '0.31.0'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Require exact technical Public Stable readiness
-        if: steps.release.outputs.version == '0.31.0'
+        if: steps.existing.outputs.published != 'true' && steps.release.outputs.version == '0.31.0'
         shell: bash
         run: |
           set -euo pipefail
@@ -101,7 +148,8 @@ jobs:
           GO
           go run "$validator_dir/main.go" dist/public-stable-evidence/control-center-0.31.0.readiness.json
 
-      - name: Publish idempotently
+      - name: Publish exact qualified release
+        if: steps.existing.outputs.published != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,19 +159,6 @@ jobs:
           RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          if existing_body="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.body' 2>/dev/null)"; then
-            desired_body="$(cat "$RELEASE_NOTES")"
-            if [[ "$existing_body" == "$desired_body" ]]; then
-              echo "${RELEASE_TAG} is already published and metadata is current"
-              exit 0
-            fi
-            gh release edit "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "Control Center ${RELEASE_VERSION}" \
-              --notes-file "$RELEASE_NOTES"
-            exit 0
-          fi
-
           tag_sha=""
           if existing_tag_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha' 2>/dev/null)"; then
             tag_sha="$existing_tag_sha"
