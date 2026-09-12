@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://control-center.pro/schemas/ui.identity-access-catalog.v1.json",
+  "title": "Control Center Identity Access Catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "generated_at",
+    "global_only",
+    "read_authorized",
+    "mutation_authorized",
+    "user_count",
+    "role_count",
+    "binding_count",
+    "users",
+    "roles",
+    "bindings"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "ui.identity-access-catalog/v1"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "global_only": {
+      "const": true
+    },
+    "read_authorized": {
+      "const": true
+    },
+    "mutation_authorized": {
+      "const": false
+    },
+    "user_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 256
+    },
+    "role_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 128
+    },
+    "binding_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1024
+    },
+    "users": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/user"
+      }
+    },
+    "roles": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/role"
+      }
+    },
+    "bindings": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/binding"
+      }
+    }
+  },
+  "$defs": {
+    "canonicalNonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["global", "tenant", "site", "resource"]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {"const": "global"}
+            }
+          },
+          "then": {
+            "properties": {
+              "id": {"maxLength": 0}
+            }
+          },
+          "else": {
+            "required": ["id"],
+            "properties": {
+              "id": {"$ref": "#/$defs/canonicalNonEmptyString"}
+            }
+          }
+        }
+      ]
+    },
+    "user": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "username",
+        "enabled",
+        "password_change_required",
+        "created_at"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "username": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "display_name": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "enabled": {"type": "boolean"},
+        "password_change_required": {"type": "boolean"},
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "password_changed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_login_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "permissions"],
+      "properties": {
+        "name": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "description": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "permissions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject_id", "role_name", "scope"],
+      "properties": {
+        "subject_id": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "role_name": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "scope": {"$ref": "#/$defs/scope"}
+      }
+    }
+  }
+}
