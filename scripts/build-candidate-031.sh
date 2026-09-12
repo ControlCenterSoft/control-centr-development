@@ -6,7 +6,7 @@ cd "$repo_root"
 
 candidate_version="${CANDIDATE_VERSION:-0.31.0}"
 [[ "$candidate_version" == "0.31.0" ]] || { echo "unexpected candidate version: $candidate_version" >&2; exit 2; }
-[[ "$(tr -d '\r\n' < VERSION)" == "0.30.0" ]] || { echo "source VERSION must remain canonical stable 0.30.0 until promotion" >&2; exit 2; }
+[[ "$(tr -d '\r\n' < VERSION)" == "$candidate_version" ]] || { echo "source VERSION must match the exact promoted candidate version" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required to generate candidate SBOM" >&2; exit 2; }
 
 commit="${CANDIDATE_SHA:-$(git rev-parse HEAD)}"
