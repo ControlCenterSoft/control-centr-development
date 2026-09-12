@@ -122,12 +122,13 @@ func TestRequiredCommercialEvidenceReturnsDefensiveCopy(t *testing.T) {
 func validCommercialLegalDisposition(now time.Time) CommercialLegalDisposition {
 	kinds := RequiredCommercialEvidence()
 	evidence := make([]CommercialEvidenceRef, 0, len(kinds))
+	hexDigits := "0123456789abcdef"
 	for index, kind := range kinds {
-		char := byte('a' + index)
+		char := string(hexDigits[index%len(hexDigits)])
 		evidence = append(evidence, CommercialEvidenceRef{
 			Kind:     kind,
 			Revision: "approved-r1",
-			Digest:   "sha256:" + strings.Repeat(string(char), 64),
+			Digest:   "sha256:" + strings.Repeat(char, 64),
 		})
 	}
 	expires := now.Add(30 * 24 * time.Hour)
