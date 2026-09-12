@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: official-release-${{ github.repository }}
@@ -41,6 +42,64 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "notes=$notes" >> "$GITHUB_OUTPUT"
+
+      - name: Download exact 0.31 release evidence
+        if: steps.release.outputs.version == '0.31.0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p dist/public-stable-evidence
+          gh run download "$TRIGGER_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "control-center-0.31.0-release-evidence-${RELEASE_SHA}" \
+            --dir dist/public-stable-evidence
+          test -f dist/public-stable-evidence/control-center-0.31.0.readiness.json
+
+      - name: Set up Go for 0.31 Stable gate
+        if: steps.release.outputs.version == '0.31.0'
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Require exact technical Public Stable readiness
+        if: steps.release.outputs.version == '0.31.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          validator_dir="$(mktemp -d "$PWD/.stable-readiness-validator.XXXXXX")"
+          trap 'rm -rf "$validator_dir"' EXIT
+          cat > "$validator_dir/main.go" <<'GO'
+          package main
+          import (
+            "encoding/json"
+            "fmt"
+            "os"
+            "control-center/internal/releasecandidate"
+          )
+          func main() {
+            raw, err := os.ReadFile(os.Args[1]); if err != nil { panic(err) }
+            var snapshot releasecandidate.Snapshot
+            if err := json.Unmarshal(raw, &snapshot); err != nil { panic(err) }
+            product, err := releasecandidate.EvaluateProductStable(snapshot); if err != nil { panic(err) }
+            if !product.Ready || len(product.Blockers) != 0 {
+              panic(fmt.Sprintf("product Stable readiness blocked: %v", product.Blockers))
+            }
+            commercial, err := releasecandidate.Evaluate(snapshot); if err != nil { panic(err) }
+            if !commercial.Ready {
+              if len(commercial.Blockers) != 1 || commercial.Blockers[0] != releasecandidate.GateCommercialLegal {
+                panic(fmt.Sprintf("unexpected non-commercial blockers: %v", commercial.Blockers))
+              }
+            }
+            fmt.Println("PRODUCT_PUBLIC_STABLE_READINESS=PASS")
+          }
+          GO
+          go run "$validator_dir/main.go" dist/public-stable-evidence/control-center-0.31.0.readiness.json
 
       - name: Publish idempotently
         shell: bash

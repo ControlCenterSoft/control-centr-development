@@ -41,10 +41,33 @@ var requiredGates = [...]GateID{
 	GateReleaseMetadata,
 }
 
-// RequiredGates returns a defensive copy so callers cannot weaken the release
-// policy by mutating package-level state.
+// productStableRequiredGates contains the product-release gates required by the
+// canonical Public Stable policy. Commercial/legal clearance is deliberately a
+// separate commercial-launch track: an incomplete commercial package must not
+// weaken technical safety, but it does not block publication of a technically
+// qualified product release.
+var productStableRequiredGates = [...]GateID{
+	GateManualRetryLineage,
+	GateOperationalE2E,
+	GatePackaging,
+	GateCleanInstall,
+	GateUpgradeFromStable,
+	GateRollbackRecovery,
+	GatePostgresRestart,
+	GateSecurityPrivacy,
+	GateReleaseMetadata,
+}
+
+// RequiredGates returns a defensive copy of the full commercial-readiness gate
+// set so callers cannot weaken that policy by mutating package-level state.
 func RequiredGates() []GateID {
 	return append([]GateID(nil), requiredGates[:]...)
+}
+
+// ProductStableRequiredGates returns a defensive copy of the technical
+// product-release gate set used for Public Stable publication.
+func ProductStableRequiredGates() []GateID {
+	return append([]GateID(nil), productStableRequiredGates[:]...)
 }
 
 type GateStatus string
@@ -82,59 +105,64 @@ var (
 	digestRE = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
 
-// Evaluate performs only fail-closed validation and aggregation of bounded
-// release evidence. It does not execute checks, build artifacts, mutate a
-// release, trigger CI, deploy software or grant publication authority.
-func Evaluate(snapshot Snapshot) (Result, error) {
+func validateSnapshot(snapshot Snapshot) (map[GateID]GateEvidence, error) {
 	if snapshot.Schema != SchemaV1 {
-		return Result{}, fmt.Errorf("unsupported readiness schema %q", snapshot.Schema)
+		return nil, fmt.Errorf("unsupported readiness schema %q", snapshot.Schema)
 	}
 	if snapshot.StableVersion != StableVersion || snapshot.StableTag != StableTag {
-		return Result{}, fmt.Errorf("unexpected stable identity %q (%q)", snapshot.StableVersion, snapshot.StableTag)
+		return nil, fmt.Errorf("unexpected stable identity %q (%q)", snapshot.StableVersion, snapshot.StableTag)
 	}
 	if snapshot.StableArtifactDigest != StableArtifactDigest {
-		return Result{}, fmt.Errorf("unexpected stable artifact digest")
+		return nil, fmt.Errorf("unexpected stable artifact digest")
 	}
 	if snapshot.CandidateVersion != CandidateVersion {
-		return Result{}, fmt.Errorf("unexpected candidate version %q", snapshot.CandidateVersion)
+		return nil, fmt.Errorf("unexpected candidate version %q", snapshot.CandidateVersion)
 	}
 	if !shaRE.MatchString(snapshot.CandidateSHA) {
-		return Result{}, fmt.Errorf("invalid candidate sha")
+		return nil, fmt.Errorf("invalid candidate sha")
 	}
 
-	required := make(map[GateID]struct{}, len(requiredGates))
+	known := make(map[GateID]struct{}, len(requiredGates))
 	for _, gate := range requiredGates {
-		required[gate] = struct{}{}
+		known[gate] = struct{}{}
 	}
 
 	seen := make(map[GateID]GateEvidence, len(snapshot.Gates))
 	for _, evidence := range snapshot.Gates {
-		if _, ok := required[evidence.Gate]; !ok {
-			return Result{}, fmt.Errorf("unknown release gate %q", evidence.Gate)
+		if _, ok := known[evidence.Gate]; !ok {
+			return nil, fmt.Errorf("unknown release gate %q", evidence.Gate)
 		}
 		if _, duplicate := seen[evidence.Gate]; duplicate {
-			return Result{}, fmt.Errorf("duplicate release gate %q", evidence.Gate)
+			return nil, fmt.Errorf("duplicate release gate %q", evidence.Gate)
 		}
 		if evidence.CandidateSHA != snapshot.CandidateSHA {
-			return Result{}, fmt.Errorf("release gate %q is bound to a different candidate sha", evidence.Gate)
+			return nil, fmt.Errorf("release gate %q is bound to a different candidate sha", evidence.Gate)
 		}
 		switch evidence.Status {
 		case GatePass:
 			if !digestRE.MatchString(evidence.EvidenceDigest) {
-				return Result{}, fmt.Errorf("release gate %q pass is missing bounded evidence digest", evidence.Gate)
+				return nil, fmt.Errorf("release gate %q pass is missing bounded evidence digest", evidence.Gate)
 			}
 		case GatePending, GateBlocked:
 			if evidence.EvidenceDigest != "" && !digestRE.MatchString(evidence.EvidenceDigest) {
-				return Result{}, fmt.Errorf("release gate %q has invalid evidence digest", evidence.Gate)
+				return nil, fmt.Errorf("release gate %q has invalid evidence digest", evidence.Gate)
 			}
 		default:
-			return Result{}, fmt.Errorf("release gate %q has invalid status %q", evidence.Gate, evidence.Status)
+			return nil, fmt.Errorf("release gate %q has invalid status %q", evidence.Gate, evidence.Status)
 		}
 		seen[evidence.Gate] = evidence
 	}
+	return seen, nil
+}
+
+func evaluateRequired(snapshot Snapshot, required []GateID) (Result, error) {
+	seen, err := validateSnapshot(snapshot)
+	if err != nil {
+		return Result{}, err
+	}
 
 	result := Result{}
-	for _, gate := range requiredGates {
+	for _, gate := range required {
 		evidence, ok := seen[gate]
 		if !ok || evidence.Status != GatePass {
 			result.Blockers = append(result.Blockers, gate)
@@ -142,4 +170,19 @@ func Evaluate(snapshot Snapshot) (Result, error) {
 	}
 	result.Ready = len(result.Blockers) == 0
 	return result, nil
+}
+
+// Evaluate aggregates the complete commercial-readiness gate set. It does not
+// execute checks, build artifacts, mutate a release, trigger CI, deploy
+// software or grant publication authority.
+func Evaluate(snapshot Snapshot) (Result, error) {
+	return evaluateRequired(snapshot, requiredGates[:])
+}
+
+// EvaluateProductStable evaluates the canonical Public Stable product-release
+// policy. Commercial/legal evidence is still validated when present and may be
+// reported separately, but only technical correctness gates determine whether
+// the product is ready for Public Stable publication.
+func EvaluateProductStable(snapshot Snapshot) (Result, error) {
+	return evaluateRequired(snapshot, productStableRequiredGates[:])
 }

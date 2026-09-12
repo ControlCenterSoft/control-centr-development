@@ -51,6 +51,71 @@ func TestRequiredGatesReturnsDefensiveCopy(t *testing.T) {
 	}
 }
 
+func TestProductStableRequiredGatesReturnsDefensiveCopy(t *testing.T) {
+	first := ProductStableRequiredGates()
+	first[0] = GateID("weakened")
+	second := ProductStableRequiredGates()
+	if second[0] != GateManualRetryLineage {
+		t.Fatalf("ProductStableRequiredGates() policy mutated through caller: %v", second)
+	}
+	for _, gate := range second {
+		if gate == GateCommercialLegal {
+			t.Fatal("commercial/legal gate must not be a product Stable blocker")
+		}
+	}
+}
+
+func TestEvaluateProductStableAllowsSeparateCommercialLaunchBlocker(t *testing.T) {
+	snapshot := completeSnapshot()
+	for index := range snapshot.Gates {
+		if snapshot.Gates[index].Gate == GateCommercialLegal {
+			snapshot.Gates[index].Status = GateBlocked
+			snapshot.Gates[index].EvidenceDigest = ""
+		}
+	}
+
+	commercial, err := Evaluate(snapshot)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if commercial.Ready || len(commercial.Blockers) != 1 || commercial.Blockers[0] != GateCommercialLegal {
+		t.Fatalf("commercial readiness = %+v, want only commercial/legal blocker", commercial)
+	}
+
+	stable, err := EvaluateProductStable(snapshot)
+	if err != nil {
+		t.Fatalf("EvaluateProductStable() error = %v", err)
+	}
+	if !stable.Ready || len(stable.Blockers) != 0 {
+		t.Fatalf("product Stable readiness = %+v, want ready", stable)
+	}
+}
+
+func TestEvaluateProductStableKeepsTechnicalSafetyFailClosed(t *testing.T) {
+	snapshot := completeSnapshot()
+	for index := range snapshot.Gates {
+		switch snapshot.Gates[index].Gate {
+		case GateCommercialLegal:
+			snapshot.Gates[index].Status = GateBlocked
+			snapshot.Gates[index].EvidenceDigest = ""
+		case GateSecurityPrivacy:
+			snapshot.Gates[index].Status = GateBlocked
+			snapshot.Gates[index].EvidenceDigest = ""
+		}
+	}
+
+	stable, err := EvaluateProductStable(snapshot)
+	if err != nil {
+		t.Fatalf("EvaluateProductStable() error = %v", err)
+	}
+	if stable.Ready {
+		t.Fatal("Ready = true, want false")
+	}
+	if len(stable.Blockers) != 1 || stable.Blockers[0] != GateSecurityPrivacy {
+		t.Fatalf("Blockers = %v, want [%s]", stable.Blockers, GateSecurityPrivacy)
+	}
+}
+
 func TestEvaluateMissingGateBlocksReadiness(t *testing.T) {
 	snapshot := completeSnapshot()
 	snapshot.Gates = snapshot.Gates[:len(snapshot.Gates)-1]
