@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,12 @@ func TestBuildSecurityOverviewIsSelfOnlyDeterministicAndNonAuthorizing(t *testin
 	}
 	if view.Identity.ID != "user-1" || view.CurrentSessionID != "session-current" {
 		t.Fatalf("unexpected subject/session identity: %#v", view)
+	}
+	if view.PasswordLifecycle.State != PasswordLifecycleActive || view.PasswordLifecycle.ChangeRequired {
+		t.Fatalf("unexpected password lifecycle state: %#v", view.PasswordLifecycle)
+	}
+	if !view.PasswordLifecycle.ChangedAt.Equal(input.PasswordChangedAt.UTC()) {
+		t.Fatalf("password lifecycle timestamp changed: got=%s want=%s", view.PasswordLifecycle.ChangedAt, input.PasswordChangedAt.UTC())
 	}
 	if view.SessionCount != 2 || len(view.Sessions) != 2 || !view.Sessions[0].Current || view.Sessions[0].ID != "session-current" {
 		t.Fatalf("sessions are not normalized deterministically: %#v", view.Sessions)
@@ -59,8 +66,29 @@ func TestBuildSecurityOverviewProjectsPasswordChangeRequirementWithoutGrantingAu
 	if view.FirstLogin != FirstLoginChangeRequired || !view.PasswordChangeRequired {
 		t.Fatalf("password-change requirement lost: %#v", view)
 	}
+	if view.PasswordLifecycle.State != PasswordLifecycleChangeRequired || !view.PasswordLifecycle.ChangeRequired {
+		t.Fatalf("password lifecycle did not preserve the required-change state: %#v", view.PasswordLifecycle)
+	}
 	if view.MutationAuthorized || !reflect.DeepEqual(view.Attention, []string{"password_change_required", "no_effective_grants"}) {
 		t.Fatalf("unexpected fail-closed projection: %#v", view)
+	}
+}
+
+func TestBuildSecurityOverviewRejectsInvalidPasswordLifecycleEvidence(t *testing.T) {
+	now := time.Date(2026, 9, 12, 16, 45, 0, 0, time.UTC)
+	for name, changedAt := range map[string]time.Time{
+		"missing":                 {},
+		"before identity creation": now.Add(-31 * 24 * time.Hour),
+		"future":                  now.Add(time.Second),
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := securityOverviewFixture(now)
+			input.PasswordChangedAt = changedAt
+			_, err := BuildSecurityOverview(input)
+			if !errors.Is(err, ErrInvalidSecurityOverview) {
+				t.Fatalf("err=%v, want ErrInvalidSecurityOverview", err)
+			}
+		})
 	}
 }
 
@@ -78,6 +106,42 @@ func TestBuildSecurityOverviewRejectsMissingOrContradictoryCurrentSession(t *tes
 		},
 		"expired": func(in *SecurityOverviewInput) {
 			in.Sessions[0].ExpiresAt = now.Add(-time.Second)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := securityOverviewFixture(now)
+			mutate(&input)
+			_, err := BuildSecurityOverview(input)
+			if !errors.Is(err, ErrInvalidSecurityOverview) {
+				t.Fatalf("err=%v, want ErrInvalidSecurityOverview", err)
+			}
+		})
+	}
+}
+
+func TestBuildSecurityOverviewRejectsNonCanonicalSecurityText(t *testing.T) {
+	now := time.Date(2026, 9, 12, 16, 45, 0, 0, time.UTC)
+	for name, mutate := range map[string]func(*SecurityOverviewInput){
+		"identity id too long": func(in *SecurityOverviewInput) {
+			in.Identity.ID = strings.Repeat("a", maxSecurityOverviewIdentifier+1)
+		},
+		"display name control character": func(in *SecurityOverviewInput) {
+			in.Identity.DisplayName = "Pavel\nAdmin"
+		},
+		"session id whitespace": func(in *SecurityOverviewInput) {
+			in.Sessions[0].ID = " session-current"
+		},
+		"source ip whitespace": func(in *SecurityOverviewInput) {
+			in.Sessions[0].SourceIP = " 192.0.2.10"
+		},
+		"user agent control character": func(in *SecurityOverviewInput) {
+			in.Sessions[0].UserAgent = "browser\r\ninjected"
+		},
+		"role name control character": func(in *SecurityOverviewInput) {
+			in.Grants[0].RoleName = "viewer\nadmin"
+		},
+		"permission too long": func(in *SecurityOverviewInput) {
+			in.Grants[0].Permissions = []rbac.Permission{rbac.Permission(strings.Repeat("p", maxSecurityOverviewIdentifier+1))}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -148,7 +212,8 @@ func securityOverviewFixture(now time.Time) SecurityOverviewInput {
 			DisplayName: "Pavel",
 			CreatedAt:   now.Add(-30 * 24 * time.Hour),
 		},
-		CurrentSessionID: "session-current",
+		PasswordChangedAt: now.Add(-7 * 24 * time.Hour),
+		CurrentSessionID:  "session-current",
 		SessionPolicy: auth.SessionSecurityPolicyView{
 			AbsoluteTTLSeconds:            int64((8 * time.Hour) / time.Second),
 			IdleTimeoutSeconds:            int64((2 * time.Hour) / time.Second),
