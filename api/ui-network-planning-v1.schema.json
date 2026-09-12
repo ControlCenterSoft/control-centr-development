@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://control-center.pro/schemas/ui-network-planning-v1.schema.json",
+  "title": "Control Center Network Planning UI v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "plan_id",
+    "node_id",
+    "revision_id",
+    "interfaces",
+    "forwarding",
+    "forwarding_default_deny",
+    "probes",
+    "steps",
+    "rollback",
+    "support_gateway_channels",
+    "mutation_authorized",
+    "external_publication_authorized"
+  ],
+  "properties": {
+    "schema": { "const": "ui.network-planning/v1" },
+    "plan_id": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "node_id": { "$ref": "#/$defs/id" },
+    "revision_id": { "$ref": "#/$defs/id" },
+    "interfaces": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/interface" }
+    },
+    "forwarding": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/forwarding" }
+    },
+    "forwarding_default_deny": { "const": true },
+    "probes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/probe" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "rollback": { "$ref": "#/$defs/rollback" },
+    "support_gateway_channels": { "$ref": "#/$defs/support_gateway" },
+    "mutation_authorized": { "const": false },
+    "external_publication_authorized": { "const": false }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "zone": {
+      "type": "string",
+      "enum": ["WAN", "LAN", "MANAGEMENT", "DMZ", "CLUSTER", "STORAGE", "BACKUP", "SUPPORT_LAN", "SUPPORT_WAN"]
+    },
+    "current_zone": {
+      "type": "string",
+      "enum": ["UNASSIGNED", "TRUSTED", "WAN", "LAN", "MANAGEMENT", "DMZ", "CLUSTER", "STORAGE", "BACKUP", "SUPPORT_LAN", "SUPPORT_WAN"]
+    },
+    "interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interface_id", "name", "current_zone", "target_zone", "operational_state", "changed"],
+      "properties": {
+        "interface_id": { "$ref": "#/$defs/id" },
+        "name": { "$ref": "#/$defs/text" },
+        "current_zone": { "$ref": "#/$defs/current_zone" },
+        "target_zone": { "$ref": "#/$defs/zone" },
+        "operational_state": { "type": "string", "enum": ["up", "down", "unknown"] },
+        "changed": { "type": "boolean" }
+      }
+    },
+    "forwarding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "destination", "explicitly_enabled", "edge_gateway_assigned"],
+      "properties": {
+        "source": { "$ref": "#/$defs/zone" },
+        "destination": { "$ref": "#/$defs/zone" },
+        "explicitly_enabled": { "type": "boolean" },
+        "edge_gateway_assigned": { "type": "boolean" }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "interface_id", "zone"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "type": "string", "enum": ["link_state", "zone_reachability", "control_plane"] },
+        "interface_id": { "$ref": "#/$defs/id" },
+        "zone": { "$ref": "#/$defs/zone" }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order", "stage", "action"],
+      "properties": {
+        "order": { "type": "integer", "minimum": 1, "maximum": 7 },
+        "stage": {
+          "type": "string",
+          "enum": ["snapshot", "preflight", "apply_window", "probes", "commit_or_rollback"]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "capture_recovery_snapshot",
+            "validate_network_contract",
+            "validate_management_path",
+            "authorize_forwarding",
+            "open_temporary_apply_window",
+            "run_connectivity_probes",
+            "commit_or_rollback"
+          ]
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot_required", "automatic_on_probe_failure", "automatic_on_timeout", "rollback_timeout_ms"],
+      "properties": {
+        "snapshot_required": { "const": true },
+        "automatic_on_probe_failure": { "const": true },
+        "automatic_on_timeout": { "const": true },
+        "rollback_timeout_ms": { "type": "integer", "minimum": 1, "maximum": 900000 }
+      }
+    },
+    "support_gateway": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "separated", "transit_authorized"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "lan_interface_id": { "$ref": "#/$defs/id" },
+        "wan_interface_id": { "$ref": "#/$defs/id" },
+        "separated": { "type": "boolean" },
+        "transit_authorized": { "const": false }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "required": { "const": true } }, "required": ["required"] },
+          "then": {
+            "required": ["lan_interface_id", "wan_interface_id"],
+            "properties": { "separated": { "const": true } }
+          }
+        }
+      ]
+    }
+  }
+}
