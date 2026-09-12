@@ -1,20 +1,25 @@
 openapi: 3.0.3
 info:
   title: Control Center Audit Event Read API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
-    Bounded, permission-gated read contract for append-only Control Center audit
-    events. This contract is read-only and does not modify audit history.
+    Bounded, permission-gated read and metadata-search contract for append-only
+    Control Center audit events. This contract is read-only and does not modify
+    audit history.
 paths:
   /api/v1/audit/events:
     get:
       operationId: listAuditEvents
-      summary: List security audit events
+      summary: List or search security audit events
       description: >-
         Returns audit events newest first. Access requires an authenticated
         session with a completed first-login password change and the global
-        audit.events.read permission. Filters are exact matches. Pagination uses
-        an opaque cursor; clients must not parse or construct cursors.
+        audit.events.read permission. Structured filters are exact matches.
+        Optional search is a case-insensitive substring match over non-detail
+        metadata only (event id, action, outcome, actor id, subject id, source
+        IP, and correlation id). Search never inspects structured event details
+        and requires explicit from/to bounds no wider than 31 days. Pagination
+        uses an opaque cursor; clients must not parse or construct cursors.
       parameters:
         - name: limit
           in: query
@@ -60,6 +65,33 @@ paths:
           schema:
             type: string
             maxLength: 256
+        - name: search
+          in: query
+          required: false
+          description: >-
+            Case-insensitive substring search across non-detail audit metadata.
+            Requires both from and to. Structured details are deliberately not
+            searched to avoid accidental sensitive-data discovery.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 128
+        - name: from
+          in: query
+          required: false
+          description: Inclusive RFC3339 lower timestamp bound. Required when search is used.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: >-
+            Inclusive RFC3339 upper timestamp bound. Required when search is
+            used; the search window may not exceed 31 days.
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: Bounded page of audit events.
@@ -128,7 +160,7 @@ components:
         details:
           type: object
           additionalProperties: true
-          description: Redacted structured event details; credentials and bearer values are not exposed.
+          description: Redacted structured event details; credentials and bearer values are not exposed or searched.
         previous_hash:
           type: string
           pattern: '^[0-9a-f]{64}$'
