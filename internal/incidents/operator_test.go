@@ -10,13 +10,13 @@ import (
 )
 
 type operatorReaderStub struct {
-	incident   Incident
-	page       ListPage
-	getErr     error
-	listErr    error
-	getCalls   int
-	listCalls  int
-	lastQuery  ListQuery
+	incident  Incident
+	page      ListPage
+	getErr    error
+	listErr   error
+	getCalls  int
+	listCalls int
+	lastQuery ListQuery
 }
 
 func (r *operatorReaderStub) Get(context.Context, string) (Incident, error) {
@@ -31,10 +31,10 @@ func (r *operatorReaderStub) List(_ context.Context, query ListQuery) (ListPage,
 }
 
 type operatorPolicyStub struct {
-	listErr       error
-	incidentErr   error
-	listCalls     int
-	incidentCalls int
+	listErr        error
+	incidentErr    error
+	listCalls      int
+	incidentCalls  int
 	lastCapability OperatorCapability
 }
 
@@ -65,13 +65,20 @@ type operatorCommitterStub struct {
 	calls    int
 	mutation PreparedMutation
 	audit    OperatorAuditRecord
+	result   *Incident
 }
 
-func (c *operatorCommitterStub) CommitIncidentMutation(_ context.Context, mutation PreparedMutation, audit OperatorAuditRecord) error {
+func (c *operatorCommitterStub) CommitIncidentMutation(_ context.Context, mutation PreparedMutation, audit OperatorAuditRecord) (Incident, error) {
 	c.calls++
 	c.mutation = mutation
 	c.audit = audit
-	return c.err
+	if c.err != nil {
+		return Incident{}, c.err
+	}
+	if c.result != nil {
+		return *c.result, nil
+	}
+	return mutation.Next, nil
 }
 
 func TestOperatorAcknowledgeBuildsAtomicAuditBoundMutation(t *testing.T) {
@@ -112,6 +119,37 @@ func TestOperatorAcknowledgeBuildsAtomicAuditBoundMutation(t *testing.T) {
 	}
 	if !committer.audit.OccurredAt.Equal(at.UTC()) {
 		t.Fatalf("audit occurred_at = %s, want %s", committer.audit.OccurredAt, at.UTC())
+	}
+}
+
+func TestOperatorMutationReturnsCanonicalCommitterState(t *testing.T) {
+	current := validIncident(StatusOpen)
+	generation := current.Generation
+	at := current.UpdatedAt.Add(time.Minute + 789*time.Nanosecond)
+	canonicalAt := at.Truncate(time.Microsecond)
+	canonical := current
+	canonical.Status = StatusAcknowledged
+	canonical.Generation++
+	canonical.ResourceVersion = "rv-3"
+	canonical.UpdatedAt = canonicalAt
+	canonical.Acknowledgement = &Acknowledgement{ActorID: "user:operator", At: canonicalAt}
+	canonical.Timeline = append(canonical.Timeline, TimelineEntry{Kind: TimelineAcknowledged, At: canonicalAt, ActorID: "user:operator"})
+
+	service := NewOperatorService(
+		&operatorReaderStub{incident: current},
+		&operatorPolicyStub{},
+		&operatorVersionStub{value: "rv-3"},
+		&operatorCommitterStub{result: &canonical},
+	)
+	got, err := service.Acknowledge(context.Background(), "user:operator", current.ObjectID, AcknowledgeCommand{
+		Precondition: corecontracts.ObjectPrecondition{ObjectID: current.ObjectID, ResourceVersion: current.ResourceVersion, Generation: &generation},
+		OccurredAt:   at,
+	})
+	if err != nil {
+		t.Fatalf("Acknowledge() error = %v", err)
+	}
+	if !got.UpdatedAt.Equal(canonicalAt) || got.UpdatedAt.Nanosecond()%1000 != 0 {
+		t.Fatalf("returned state is not canonical persisted state: %s", got.UpdatedAt)
 	}
 }
 
@@ -189,13 +227,9 @@ func TestOperatorListAuthorizesBeforeStorage(t *testing.T) {
 func TestOperatorListRejectsPolicyStorageScopeMismatch(t *testing.T) {
 	current := validIncident(StatusAcknowledged)
 	reader := &operatorReaderStub{page: ListPage{Items: []Incident{current}}}
-	policy := &operatorPolicyStub{}
+	policy := &operatorPolicyStub{incidentErr: ErrOperatorAccessDenied}
 	service := NewOperatorService(reader, policy, &operatorVersionStub{value: "unused"}, &operatorCommitterStub{})
 
-	// Authorize the list query itself, but deny the concrete item returned by
-	// storage. This simulates a broken policy/storage scope binding and must fail
-	// closed instead of filtering the item and leaking pagination metadata.
-	policy.incidentErr = ErrOperatorAccessDenied
 	_, err := service.List(context.Background(), "user:viewer", ListQuery{ScopeID: current.ScopeID})
 	if !errors.Is(err, ErrOperatorDependencyUnavailable) {
 		t.Fatalf("List() error = %v, want ErrOperatorDependencyUnavailable", err)
