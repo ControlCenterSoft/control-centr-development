@@ -20,6 +20,11 @@ type OperationalReportProvider interface {
 // evidence fields that are allowed to originate upstream and must match the
 // supplied projection exactly, including ordering, effective state and digest.
 //
+// JSON omitempty may turn an empty evidence_refs array into nil after a
+// serialize/deserialize round trip. That representation-only difference is
+// normalized before the strict comparison; all security-relevant fields remain
+// exact-bound.
+//
 // This function is read-only and never grants mutation or execution authority.
 func ValidateOperationalReport(report OperationalReport) error {
 	if report.Schema != OperationalReportSchema {
@@ -56,8 +61,20 @@ func ValidateOperationalReport(report OperationalReport) error {
 	if err != nil {
 		return fmt.Errorf("invalid operational report: %w", err)
 	}
-	if !reflect.DeepEqual(report, canonical) {
+	provided := normalizeOperationalReportRepresentation(report)
+	canonical = normalizeOperationalReportRepresentation(canonical)
+	if !reflect.DeepEqual(provided, canonical) {
 		return errors.New("operational report is not canonical")
 	}
 	return nil
+}
+
+func normalizeOperationalReportRepresentation(report OperationalReport) OperationalReport {
+	report.Evidence = append([]ReportEvidence(nil), report.Evidence...)
+	for index := range report.Evidence {
+		if len(report.Evidence[index].EvidenceRefs) == 0 {
+			report.Evidence[index].EvidenceRefs = []string{}
+		}
+	}
+	return report
 }
