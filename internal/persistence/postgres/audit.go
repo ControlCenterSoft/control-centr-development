@@ -57,6 +57,14 @@ func (l *AuditLog) Read(ctx context.Context, query audit.Query) (audit.Page, err
 	if query.BeforeSequenceID > 0 {
 		before = query.BeforeSequenceID
 	}
+	var from any
+	if !query.From.IsZero() {
+		from = query.From
+	}
+	var to any
+	if !query.To.IsZero() {
+		to = query.To
+	}
 	rows, err := l.db.QueryContext(ctx, `
 SELECT sequence_id, id::text, occurred_at, action, outcome, actor_id::text, subject_id, host(source_ip), correlation_id, details, previous_hash, hash
 FROM cc_audit_events
@@ -65,8 +73,20 @@ WHERE ($1::bigint IS NULL OR sequence_id < $1)
   AND ($3::text = '' OR outcome = $3)
   AND ($4::text = '' OR actor_id::text = $4)
   AND ($5::text = '' OR subject_id = $5)
+  AND ($6::timestamptz IS NULL OR occurred_at >= $6)
+  AND ($7::timestamptz IS NULL OR occurred_at <= $7)
+  AND (
+    $8::text = ''
+    OR strpos(lower(id::text), lower($8)) > 0
+    OR strpos(lower(action), lower($8)) > 0
+    OR strpos(lower(outcome), lower($8)) > 0
+    OR strpos(lower(COALESCE(actor_id::text, '')), lower($8)) > 0
+    OR strpos(lower(COALESCE(subject_id, '')), lower($8)) > 0
+    OR strpos(lower(COALESCE(host(source_ip), '')), lower($8)) > 0
+    OR strpos(lower(COALESCE(correlation_id, '')), lower($8)) > 0
+  )
 ORDER BY sequence_id DESC
-LIMIT $6`, before, query.Action, query.Outcome, query.ActorID, query.SubjectID, query.Limit+1)
+LIMIT $9`, before, query.Action, query.Outcome, query.ActorID, query.SubjectID, from, to, query.Search, query.Limit+1)
 	if err != nil {
 		return audit.Page{}, fmt.Errorf("read audit events: %w", err)
 	}
