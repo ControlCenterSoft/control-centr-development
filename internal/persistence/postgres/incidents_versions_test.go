@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func TestIncidentResourceVersionGeneratorProducesOpaqueStableShape(t *testing.T)
 	generator := newIncidentResourceVersionGenerator(bytes.NewReader(entropy))
 	current := validIncidentForVersionTest()
 
-	version, err := generator.NextIncidentResourceVersion(t.Context(), current)
+	version, err := generator.NextIncidentResourceVersion(context.Background(), current)
 	if err != nil {
 		t.Fatalf("NextIncidentResourceVersion() error = %v", err)
 	}
@@ -30,7 +31,7 @@ func TestIncidentResourceVersionGeneratorProducesOpaqueStableShape(t *testing.T)
 
 func TestIncidentResourceVersionGeneratorFailsClosedOnEntropyError(t *testing.T) {
 	generator := newIncidentResourceVersionGenerator(bytes.NewReader(nil))
-	if _, err := generator.NextIncidentResourceVersion(t.Context(), validIncidentForVersionTest()); err == nil {
+	if _, err := generator.NextIncidentResourceVersion(context.Background(), validIncidentForVersionTest()); err == nil {
 		t.Fatal("expected entropy failure")
 	}
 }
