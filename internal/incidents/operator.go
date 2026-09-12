@@ -11,26 +11,12 @@ import (
 )
 
 var (
-	// ErrOperatorIdentityRequired means an authenticated server-side identity was
-	// not supplied. Actor identity must never be accepted from the request body.
 	ErrOperatorIdentityRequired = errors.New("incident operator identity is required")
-	// ErrOperatorAccessDenied is returned by policy adapters when the actor lacks
-	// the exact read/mutation capability for the requested scope. Object reads
-	// deliberately collapse this error to ErrNotFound to avoid an authorization
-	// oracle for incident identifiers.
 	ErrOperatorAccessDenied = errors.New("incident operator access denied")
-	// ErrOperatorStepUpRequired lets an authorization policy require fresh MFA or
-	// another bounded re-authentication step without granting any authority itself.
 	ErrOperatorStepUpRequired = errors.New("incident operator step-up required")
-	// ErrOperatorDependencyUnavailable is fail-closed: a missing policy,
-	// revision generator, or atomic commit boundary must never become permission.
 	ErrOperatorDependencyUnavailable = errors.New("incident operator dependency unavailable")
 )
 
-// OperatorCapability is an application-level capability. The HTTP/runtime
-// adapter maps these capabilities to persisted RBAC permissions and any
-// purpose-bound step-up policy; this package intentionally does not invent a
-// second RBAC store.
 type OperatorCapability string
 
 const (
@@ -41,24 +27,15 @@ const (
 	CapabilityIncidentEvidenceUpdate OperatorCapability = "incidents.evidence.write"
 )
 
-// OperatorAccessPolicy is the only authorization/step-up boundary consumed by
-// OperatorService. Implementations must derive permissions from the
-// authenticated actor and server-side scope. Returning nil authorizes exactly
-// the supplied capability; every error fails closed.
 type OperatorAccessPolicy interface {
 	AuthorizeList(context.Context, string, OperatorCapability, ListQuery) error
 	AuthorizeIncident(context.Context, string, OperatorCapability, Incident) error
 }
 
-// ResourceVersionGenerator creates an opaque persistence token for the next
-// incident revision. Clients cannot choose or increment resource versions.
 type ResourceVersionGenerator interface {
 	NextIncidentResourceVersion(context.Context, Incident) (string, error)
 }
 
-// OperatorAuditRecord is intentionally metadata-only. Free-form notes,
-// resolution text, evidence payloads and credentials are excluded from this
-// record; immutable evidence may refer to the incident object by exact revision.
 type OperatorAuditRecord struct {
 	Action                OperatorCapability `json:"action"`
 	ActorID               string             `json:"actor_id"`
@@ -73,15 +50,14 @@ type OperatorAuditRecord struct {
 	AfterResourceVersion  string             `json:"after_resource_version"`
 }
 
-// AtomicMutationCommitter persists the prepared mutation and its immutable
-// Audit evidence in one atomic durability boundary. A storage adapter must not
-// make the incident update visible as successful if the Audit append fails.
+// AtomicMutationCommitter persists the mutation and immutable Audit evidence in
+// one durability boundary and returns the canonical representation actually
+// stored. This prevents a successful response from exposing timestamps or other
+// normalized fields that differ from the next read after persistence.
 type AtomicMutationCommitter interface {
-	CommitIncidentMutation(context.Context, PreparedMutation, OperatorAuditRecord) error
+	CommitIncidentMutation(context.Context, PreparedMutation, OperatorAuditRecord) (Incident, error)
 }
 
-// OperatorService is the authenticated application boundary for incident reads
-// and operator mutations. It does not expose generic execution authority.
 type OperatorService struct {
 	reader    Reader
 	policy    OperatorAccessPolicy
@@ -130,8 +106,6 @@ func (s *OperatorService) List(ctx context.Context, actorID string, query ListQu
 	if err != nil {
 		return ListPage{}, err
 	}
-	// Policy is evaluated before storage so an unauthorized broad query cannot
-	// learn hidden incident counts or pagination boundaries.
 	if err := s.policy.AuthorizeList(ctx, actorID, CapabilityIncidentList, normalized); err != nil {
 		return ListPage{}, err
 	}
@@ -144,9 +118,6 @@ func (s *OperatorService) List(ctx context.Context, actorID string, query ListQu
 			return ListPage{}, fmt.Errorf("%w: stored incident page contains invalid item", ErrOperatorDependencyUnavailable)
 		}
 		if err := s.policy.AuthorizeIncident(ctx, actorID, CapabilityIncidentRead, page.Items[idx]); err != nil {
-			// The list policy must select a storage scope that is fully visible to
-			// the actor. Returning a partially filtered page would leak counts and
-			// corrupt keyset pagination, so any mismatch fails the whole request.
 			return ListPage{}, fmt.Errorf("%w: list scope returned an unauthorized incident", ErrOperatorDependencyUnavailable)
 		}
 	}
@@ -177,11 +148,8 @@ type EvidenceUpdateCommand struct {
 func (s *OperatorService) Acknowledge(ctx context.Context, actorID, incidentID string, command AcknowledgeCommand) (Incident, error) {
 	return s.commitMutation(ctx, actorID, incidentID, CapabilityIncidentAcknowledge, command.OccurredAt, func(current Incident, resourceVersion string) (PreparedMutation, error) {
 		return PrepareAcknowledgement(current, AcknowledgeRequest{
-			Precondition:    command.Precondition,
-			ActorID:         actorID,
-			OccurredAt:      command.OccurredAt,
-			ResourceVersion: resourceVersion,
-			Note:            command.Note,
+			Precondition: command.Precondition, ActorID: actorID, OccurredAt: command.OccurredAt,
+			ResourceVersion: resourceVersion, Note: command.Note,
 		})
 	})
 }
@@ -189,12 +157,8 @@ func (s *OperatorService) Acknowledge(ctx context.Context, actorID, incidentID s
 func (s *OperatorService) Resolve(ctx context.Context, actorID, incidentID string, command ResolveCommand) (Incident, error) {
 	return s.commitMutation(ctx, actorID, incidentID, CapabilityIncidentResolve, command.OccurredAt, func(current Incident, resourceVersion string) (PreparedMutation, error) {
 		return PrepareResolution(current, ResolveRequest{
-			Precondition:    command.Precondition,
-			ActorID:         actorID,
-			OccurredAt:      command.OccurredAt,
-			ResourceVersion: resourceVersion,
-			Resolution:      command.Resolution,
-			Evidence:        cloneEvidence(command.Evidence),
+			Precondition: command.Precondition, ActorID: actorID, OccurredAt: command.OccurredAt,
+			ResourceVersion: resourceVersion, Resolution: command.Resolution, Evidence: cloneEvidence(command.Evidence),
 		})
 	})
 }
@@ -202,13 +166,8 @@ func (s *OperatorService) Resolve(ctx context.Context, actorID, incidentID strin
 func (s *OperatorService) UpdateEvidence(ctx context.Context, actorID, incidentID string, command EvidenceUpdateCommand) (Incident, error) {
 	return s.commitMutation(ctx, actorID, incidentID, CapabilityIncidentEvidenceUpdate, command.OccurredAt, func(current Incident, resourceVersion string) (PreparedMutation, error) {
 		return PrepareEvidenceUpdate(current, EvidenceUpdateRequest{
-			Precondition:    command.Precondition,
-			ActorID:         actorID,
-			OccurredAt:      command.OccurredAt,
-			ResourceVersion: resourceVersion,
-			Runbook:         cloneRunbook(command.Runbook),
-			Evidence:        cloneEvidence(command.Evidence),
-			Note:            command.Note,
+			Precondition: command.Precondition, ActorID: actorID, OccurredAt: command.OccurredAt,
+			ResourceVersion: resourceVersion, Runbook: cloneRunbook(command.Runbook), Evidence: cloneEvidence(command.Evidence), Note: command.Note,
 		})
 	})
 }
@@ -252,26 +211,28 @@ func (s *OperatorService) commitMutation(ctx context.Context, actorID, incidentI
 	if prepared.Next.ObjectID != current.ObjectID || prepared.Next.ScopeID != current.ScopeID {
 		return Incident{}, fmt.Errorf("%w: prepared mutation changed incident identity or scope", ErrOperatorDependencyUnavailable)
 	}
-	audit := OperatorAuditRecord{
-		Action:                capability,
-		ActorID:               actorID,
-		IncidentID:            current.ObjectID,
-		ScopeID:               current.ScopeID,
-		OccurredAt:            occurredAt.UTC(),
-		BeforeStatus:          current.Status,
-		AfterStatus:           prepared.Next.Status,
-		BeforeGeneration:      current.Generation,
-		AfterGeneration:       prepared.Next.Generation,
-		BeforeResourceVersion: current.ResourceVersion,
-		AfterResourceVersion:  prepared.Next.ResourceVersion,
+	auditRecord := OperatorAuditRecord{
+		Action: capability, ActorID: actorID, IncidentID: current.ObjectID, ScopeID: current.ScopeID,
+		OccurredAt: occurredAt.UTC(), BeforeStatus: current.Status, AfterStatus: prepared.Next.Status,
+		BeforeGeneration: current.Generation, AfterGeneration: prepared.Next.Generation,
+		BeforeResourceVersion: current.ResourceVersion, AfterResourceVersion: prepared.Next.ResourceVersion,
 	}
-	if err := validateOperatorAuditRecord(audit); err != nil {
+	if err := validateOperatorAuditRecord(auditRecord); err != nil {
 		return Incident{}, fmt.Errorf("%w: invalid audit record: %v", ErrOperatorDependencyUnavailable, err)
 	}
-	if err := s.committer.CommitIncidentMutation(ctx, prepared, audit); err != nil {
+	persisted, err := s.committer.CommitIncidentMutation(ctx, prepared, auditRecord)
+	if err != nil {
 		return Incident{}, err
 	}
-	return prepared.Next, nil
+	if err := persisted.Validate(); err != nil {
+		return Incident{}, fmt.Errorf("%w: committer returned invalid persisted incident", ErrOperatorDependencyUnavailable)
+	}
+	if persisted.ObjectID != prepared.Next.ObjectID || persisted.ScopeID != prepared.Next.ScopeID ||
+		persisted.Status != prepared.Next.Status || persisted.Generation != prepared.Next.Generation ||
+		persisted.ResourceVersion != prepared.Next.ResourceVersion {
+		return Incident{}, fmt.Errorf("%w: committer returned a different persisted revision", ErrOperatorDependencyUnavailable)
+	}
+	return persisted, nil
 }
 
 func validateOperatorActor(actorID string) error {
