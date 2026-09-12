@@ -1,0 +1,35 @@
+name: 0.31 release evidence contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/finalize-release-evidence-031.py'
+      - 'scripts/test-finalize-release-evidence-031.py'
+      - '.github/workflows/release-evidence-contract.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-evidence-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: External commercial/legal evidence finalizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Compile finalizer
+        shell: bash
+        run: python3 -m py_compile scripts/finalize-release-evidence-031.py scripts/test-finalize-release-evidence-031.py
+
+      - name: Verify fail-closed finalization contract
+        shell: bash
+        run: python3 scripts/test-finalize-release-evidence-031.py

@@ -1,0 +1,130 @@
+name: Finalize Control Center 0.31 release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact qualified Control Center 0.31 candidate SHA
+        required: true
+        type: string
+      engineering_run_id:
+        description: Successful Public CI run ID that preserved exact-bound 0.31 release evidence
+        required: true
+        type: string
+      commercial_evidence_json:
+        description: Compact control-center.commercial-legal-evidence.v1 JSON; no legal text or personal data
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: finalize-cc-031-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    name: Bind external commercial/legal evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      ENGINEERING_RUN_ID: ${{ inputs.engineering_run_id }}
+      COMMERCIAL_EVIDENCE_JSON: ${{ inputs.commercial_evidence_json }}
+    steps:
+      - name: Validate bounded inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$ENGINEERING_RUN_ID" =~ ^[0-9]+$ ]]
+
+      - name: Checkout release finalizer
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Download exact engineering evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/finalize/engineering
+          gh run download "$ENGINEERING_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "control-center-0.31.0-release-evidence-${CANDIDATE_SHA}" \
+            --dir dist/finalize/engineering
+          readiness="$(find dist/finalize/engineering -type f -name 'control-center-0.31.0.readiness.json' -print -quit)"
+          test -n "$readiness"
+          cp "$readiness" dist/finalize/control-center-0.31.0.engineering-readiness.json
+
+      - name: Materialize bounded commercial/legal attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib
+          raw = json.loads(os.environ["COMMERCIAL_EVIDENCE_JSON"])
+          if not isinstance(raw, dict):
+              raise SystemExit("commercial evidence must be a JSON object")
+          pathlib.Path("dist/finalize/control-center-0.31.0.commercial-legal-evidence.json").write_text(
+              json.dumps(raw, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Finalize fail-closed readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/finalize-release-evidence-031.py \
+            --engineering-readiness dist/finalize/control-center-0.31.0.engineering-readiness.json \
+            --commercial-evidence dist/finalize/control-center-0.31.0.commercial-legal-evidence.json \
+            --readiness-output dist/finalize/control-center-0.31.0.final-readiness.json \
+            --authority-output dist/finalize/control-center-0.31.0.publication-authority.json
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Require final readiness evaluator PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          validator_dir="$(mktemp -d "$PWD/.final-readiness-validator.XXXXXX")"
+          trap 'rm -rf "$validator_dir"' EXIT
+          cat > "$validator_dir/main.go" <<'GO'
+          package main
+          import (
+            "encoding/json"
+            "fmt"
+            "os"
+            "control-center/internal/releasecandidate"
+          )
+          func main() {
+            raw, err := os.ReadFile(os.Args[1]); if err != nil { panic(err) }
+            var snapshot releasecandidate.Snapshot
+            if err := json.Unmarshal(raw, &snapshot); err != nil { panic(err) }
+            result, err := releasecandidate.Evaluate(snapshot); if err != nil { panic(err) }
+            if !result.Ready || len(result.Blockers) != 0 { panic(fmt.Sprintf("final readiness blocked: %v", result.Blockers)) }
+            fmt.Println("FINAL_RELEASE_READINESS=PASS")
+          }
+          GO
+          go run "$validator_dir/main.go" dist/finalize/control-center-0.31.0.final-readiness.json
+
+      - name: Preserve final exact-bound release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: control-center-0.31.0-final-release-evidence-${{ inputs.candidate_sha }}
+          path: |
+            dist/finalize/control-center-0.31.0.engineering-readiness.json
+            dist/finalize/control-center-0.31.0.commercial-legal-evidence.json
+            dist/finalize/control-center-0.31.0.final-readiness.json
+            dist/finalize/control-center-0.31.0.publication-authority.json
+          if-no-files-found: error
+          retention-days: 30
