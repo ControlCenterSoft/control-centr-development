@@ -91,7 +91,7 @@ func BuildCSVExport(entries []Entry, generatedAt time.Time) ([]byte, CSVExportMa
 		if err := validateExportEvent(event); err != nil {
 			return nil, CSVExportManifest{}, fmt.Errorf("%w: sequence %d: %v", ErrInvalidExport, entry.SequenceID, err)
 		}
-		details, err := json.Marshal(Redact(event.Details))
+		details, err := json.Marshal(redactExportDetails(event.Details))
 		if err != nil {
 			return nil, CSVExportManifest{}, fmt.Errorf("%w: sequence %d details: %v", ErrInvalidExport, entry.SequenceID, err)
 		}
@@ -158,6 +158,42 @@ func isLowerHexDigest(value string) bool {
 		}
 	}
 	return true
+}
+
+func redactExportDetails(input map[string]any) map[string]any {
+	redacted := Redact(input)
+	return redactExportPIIMap(redacted)
+}
+
+func redactExportPIIMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	for key, value := range input {
+		normalized := strings.ToLower(strings.TrimSpace(key))
+		normalized = strings.NewReplacer("_", "", "-", "", ".", "").Replace(normalized)
+		switch normalized {
+		case "sourceip", "remoteip", "clientip", "ipaddress":
+			input[key] = "[REDACTED]"
+			continue
+		}
+		input[key] = redactExportPIIValue(value)
+	}
+	return input
+}
+
+func redactExportPIIValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return redactExportPIIMap(typed)
+	case []any:
+		for index := range typed {
+			typed[index] = redactExportPIIValue(typed[index])
+		}
+		return typed
+	default:
+		return typed
+	}
 }
 
 func escapeSpreadsheetFormula(value string) string {
