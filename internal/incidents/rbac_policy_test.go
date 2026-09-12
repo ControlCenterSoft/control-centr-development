@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"control-center/internal/corecontracts"
 	"control-center/internal/identity/rbac"
 )
 
@@ -32,6 +33,10 @@ func (failingRBACScopeResolver) IncidentScope(context.Context, Incident) (rbac.S
 	return rbac.Scope{}, ErrIncidentRBACScopeUnavailable
 }
 
+func incidentWithScope(scopeID string) Incident {
+	return Incident{ObjectMetadata: corecontracts.ObjectMetadata{ScopeID: scopeID}}
+}
+
 func TestDefaultRBACPermissionMapUsesExistingLeastPrivilegeBoundaries(t *testing.T) {
 	permissions := DefaultRBACPermissionMap()
 	if permissions.Read != rbac.PermissionResourcesRead || permissions.List != rbac.PermissionResourcesRead {
@@ -52,7 +57,7 @@ func TestRBACOperatorPolicyAuthorizesIncidentAgainstResolvedScope(t *testing.T) 
 		t.Fatalf("new policy: %v", err)
 	}
 
-	if err := policy.AuthorizeIncident(context.Background(), "operator-1", CapabilityIncidentRead, Incident{ScopeID: "site-a"}); err != nil {
+	if err := policy.AuthorizeIncident(context.Background(), "operator-1", CapabilityIncidentRead, incidentWithScope("site-a")); err != nil {
 		t.Fatalf("authorize read: %v", err)
 	}
 	if checker.subjectID != "operator-1" {
@@ -74,7 +79,7 @@ func TestRBACOperatorPolicyDeniesMutationWithoutGrant(t *testing.T) {
 		t.Fatalf("new policy: %v", err)
 	}
 
-	err = policy.AuthorizeIncident(context.Background(), "operator-1", CapabilityIncidentAcknowledge, Incident{ScopeID: "tenant-a"})
+	err = policy.AuthorizeIncident(context.Background(), "operator-1", CapabilityIncidentAcknowledge, incidentWithScope("tenant-a"))
 	if !errors.Is(err, ErrOperatorAccessDenied) {
 		t.Fatalf("expected access denied, got %v", err)
 	}
@@ -108,7 +113,7 @@ func TestRBACOperatorPolicyFailsClosedWhenScopeCannotBeResolved(t *testing.T) {
 		t.Fatalf("new policy: %v", err)
 	}
 
-	err = policy.AuthorizeIncident(context.Background(), "operator-1", CapabilityIncidentResolve, Incident{ScopeID: "site-a"})
+	err = policy.AuthorizeIncident(context.Background(), "operator-1", CapabilityIncidentResolve, incidentWithScope("site-a"))
 	if !errors.Is(err, ErrOperatorDependencyUnavailable) {
 		t.Fatalf("expected dependency failure, got %v", err)
 	}
@@ -124,7 +129,7 @@ func TestRBACOperatorPolicyRejectsUnsupportedCapability(t *testing.T) {
 		t.Fatalf("new policy: %v", err)
 	}
 
-	err = policy.AuthorizeIncident(context.Background(), "operator-1", OperatorCapability("incidents.delete"), Incident{ScopeID: "site-a"})
+	err = policy.AuthorizeIncident(context.Background(), "operator-1", OperatorCapability("incidents.delete"), incidentWithScope("site-a"))
 	if !errors.Is(err, ErrOperatorDependencyUnavailable) {
 		t.Fatalf("expected dependency failure for unsupported capability, got %v", err)
 	}
