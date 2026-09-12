@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	ErrOperatorIdentityRequired = errors.New("incident operator identity is required")
-	ErrOperatorAccessDenied = errors.New("incident operator access denied")
-	ErrOperatorStepUpRequired = errors.New("incident operator step-up required")
+	ErrOperatorIdentityRequired      = errors.New("incident operator identity is required")
+	ErrOperatorAccessDenied          = errors.New("incident operator access denied")
+	ErrOperatorStepUpRequired        = errors.New("incident operator step-up required")
 	ErrOperatorDependencyUnavailable = errors.New("incident operator dependency unavailable")
 )
 

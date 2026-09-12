@@ -33,11 +33,11 @@ type PreparedMutation struct {
 // AcknowledgeRequest records that an authorized operator accepted ownership of
 // an open incident. Note is bounded timeline text and may be empty.
 type AcknowledgeRequest struct {
-	Precondition   corecontracts.ObjectPrecondition `json:"precondition"`
-	ActorID        string                           `json:"actor_id"`
-	OccurredAt     time.Time                        `json:"occurred_at"`
-	ResourceVersion string                          `json:"resource_version"`
-	Note           string                           `json:"note,omitempty"`
+	Precondition    corecontracts.ObjectPrecondition `json:"precondition"`
+	ActorID         string                           `json:"actor_id"`
+	OccurredAt      time.Time                        `json:"occurred_at"`
+	ResourceVersion string                           `json:"resource_version"`
+	Note            string                           `json:"note,omitempty"`
 }
 
 // PrepareAcknowledgement creates an acknowledged successor without mutating

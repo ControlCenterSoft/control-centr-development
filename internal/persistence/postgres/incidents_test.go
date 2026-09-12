@@ -88,7 +88,7 @@ func TestCanonicalizeIncidentTimesMatchesPostgresPrecision(t *testing.T) {
 		},
 		Signals: []incidents.Signal{{
 			ObservedAt: observed,
-			Evidence: []incidents.EvidenceRef{{Collected: observed}},
+			Evidence:   []incidents.EvidenceRef{{Collected: observed}},
 		}},
 		Timeline: []incidents.TimelineEntry{{
 			At:       updated,

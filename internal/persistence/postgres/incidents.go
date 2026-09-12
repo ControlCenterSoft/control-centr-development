@@ -216,11 +216,11 @@ type incidentScanner interface{ Scan(...any) error }
 func scanIncidentMirror(row incidentScanner) (incidents.Incident, error) {
 	var (
 		objectID, scopeID, ownerScope, resourceVersion string
-		severity, status, title                    string
-		generation                                 int64
-		startedAt, lastObservedAt                  sql.NullTime
-		createdAt, updatedAt                       sql.NullTime
-		document                                   []byte
+		severity, status, title                        string
+		generation                                     int64
+		startedAt, lastObservedAt                      sql.NullTime
+		createdAt, updatedAt                           sql.NullTime
+		document                                       []byte
 	)
 	if err := row.Scan(
 		&objectID,
