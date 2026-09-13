@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"control-center/internal/corecontracts"
@@ -275,6 +274,5 @@ func validateUniqueIDs(field string, values []string) error {
 		}
 		seen[value] = struct{}{}
 	}
-	sort.Strings(values)
 	return nil
 }
