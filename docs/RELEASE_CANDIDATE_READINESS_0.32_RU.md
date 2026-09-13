@@ -2,7 +2,9 @@
 
 Статус: **PREPARED / НЕ RELEASE CANDIDATE / НЕ PUBLIC STABLE**.
 
-Текущий канонический Public Stable — **0.31.0** (`v0.31.0`). Его Linux artifact имеет SHA-256 `0b270edcf1d17bd6a38fa3f77b78c4112d43fb945582ee2d25cd91daf38cf06c`. Любое release evidence 0.32 обязано быть привязано к одной точной immutable candidate revision и к этой опубликованной Stable-базе; evidence другого SHA или другой Stable identity не переносится.
+Текущий канонический Public Stable — **0.31.1** (`v0.31.1`). Его Linux artifact `control-center-0.31.1-linux-amd64.tar.gz` имеет SHA-256 `b9d6467c7c95a6e7e8597398c1b6e7327d319058d248e9cd0416c5baf9699c97`. Любое release evidence 0.32 обязано быть привязано к одной точной immutable candidate revision и к этой опубликованной Stable-базе; evidence другого SHA, предыдущего `v0.31.0` или иной Stable identity не переносится.
+
+0.31.1 является corrective patch того же feature/schema scope 0.31 и содержит штатный `scripts/migrate.sh`; поэтому новый release gate не использует исторический workaround package 0.31.0.
 
 ## Обязательный продуктовый scope 0.32
 
@@ -14,10 +16,10 @@
 - Reports / Evidence Drawer с resource-bound evidence и без cross-resource leakage;
 - authoritative adapters Health / Incidents / Audit → Reports;
 - authenticated server-side RBAC и first-login/password-change boundary для всех активированных API/Web маршрутов;
-- поддерживаемый upgrade 0.31 → 0.32 с immutable migrations 0.31 и additive 0.32 schema;
+- поддерживаемый upgrade 0.31.1 → 0.32 с immutable migrations 0.31 и additive 0.32 schema;
 - отсутствие false Success, hidden mutation authority и client-controlled actor/provider/source selection.
 
-Подготовленные, но ещё не интегрированные ветки/PR не являются release evidence. В частности, открытый Incident browser PR и отдельная Health HTTP/browser/provider линия должны либо войти в точный кандидат после собственной qualification, либо быть явно исключены из заявленного 0.32 scope через authoritative Roadmap change. Их наличие само по себе не закрывает gate.
+Подготовленные, но ещё не интегрированные ветки/PR не являются release evidence. В частности, открытый Incident browser PR #207 должен войти в точный кандидат только после собственной qualification/integration; его наличие само по себе не закрывает gate. Любая иная подготовленная Health browser/provider линия также считается только source work до отдельной qualification/integration.
 
 ## Технические gates Product Public Stable
 
@@ -26,7 +28,7 @@
 1. `health_incidents_audit_reports_integration` — canonical scope 0.32 интегрирован, runtime/API/Web boundaries соответствуют authoritative Roadmap и не содержат неподтверждённых success claims.
 2. `candidate_artifact_packaging` — exact-SHA reproducible Linux/source artifacts, SBOM, THIRD_PARTY_NOTICES, checksums, provenance и release manifest.
 3. `clean_install` — чистая установка exact candidate artifact.
-4. `upgrade_from_stable_0_31` — поддерживаемое обновление с опубликованного 0.31.0 с сохранением данных, настроек, установленного admin password и first-login state.
+4. `upgrade_from_stable_0_31_1` — поддерживаемое обновление с опубликованного 0.31.1 с сохранением данных, настроек, установленного admin password и first-login state.
 5. `rollback_forward_recovery` — восстановление exact pre-upgrade state и повторное безопасное forward recovery.
 6. `postgres_restart_reconnect` — PostgreSQL 15–18 / adapter / restart-reconnect boundaries для нового durable state.
 7. `security_privacy` — RBAC, no-secret/privacy, stale/idempotency, Audit integrity, browser security headers, CSV/formula safety и negative/failure paths.
@@ -48,7 +50,7 @@
 - `control-center-0.32.0.release-manifest.json`;
 - `SHA256SUMS`.
 
-0.31 artifact names, digests или readiness snapshot не могут использоваться как 0.32 evidence. Уже опубликованные 0.31 migrations должны совпадать byte-for-byte; 0.32 schema changes добавляются только новой migration.
+Stable 0.31.1 artifact names/digests не могут использоваться как 0.32 candidate evidence; они используются только как exact upgrade base. Уже опубликованные 0.31 migrations должны совпадать byte-for-byte; 0.32 schema changes добавляются только новой migration.
 
 ## Stop conditions
 
@@ -56,6 +58,7 @@ Promotion запрещён, если остаётся хотя бы одно и�
 
 - candidate VERSION/revision/artifact identity расходится;
 - обязательный technical gate отсутствует, pending или blocked;
+- Stable evidence не совпадает с exact `v0.31.1` / pinned Linux artifact digest;
 - source/migration drift затрагивает опубликованную 0.31 базу;
 - stale/malformed/cross-resource evidence может быть показано как current/Healthy/Success;
 - upgrade сбрасывает пользовательские данные, настройки или установленный пароль;
