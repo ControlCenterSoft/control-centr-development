@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,11 +118,57 @@ func TestAuditReportsDoNotInheritResourcesRead(t *testing.T) {
 	}
 }
 
+func TestReportsBrowserRoutesPreserveSourceSpecificRBAC(t *testing.T) {
+	provider := reportsAuthProvider(t)
+	fixture := newResourceAuthFixtureWithProductOptions(t,
+		withResourceReportsProvider(provider),
+		withAuditReportsProvider(provider),
+	)
+
+	tests := []struct {
+		name       string
+		path       string
+		username   string
+		wantStatus int
+		wantBody   string
+	}{
+		{name: "resource-anonymous-redirect", path: "/reports/resources", wantStatus: http.StatusSeeOther},
+		{name: "resource-site-viewer-denied", path: "/reports/resources", username: "siteviewer", wantStatus: http.StatusForbidden},
+		{name: "resource-viewer", path: "/reports/resources", username: "viewer", wantStatus: http.StatusOK, wantBody: "Ресурсы / Health"},
+		{name: "resource-operator", path: "/reports/resources", username: "operator", wantStatus: http.StatusOK, wantBody: "Healthy / подтверждено"},
+		{name: "audit-viewer-denied", path: "/reports/audit", username: "viewer", wantStatus: http.StatusForbidden},
+		{name: "audit-operator-denied", path: "/reports/audit", username: "operator", wantStatus: http.StatusForbidden},
+		{name: "audit-auditor", path: "/reports/audit", username: "auditor", wantStatus: http.StatusOK, wantBody: "Операционный отчёт: Audit"},
+		{name: "audit-admin", path: "/reports/audit", username: "admin", wantStatus: http.StatusOK, wantBody: "Evidence Drawer"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, test.path, nil)
+			if test.username != "" {
+				request.AddCookie(fixture.login(t, test.username))
+			}
+			result := httptest.NewRecorder()
+			fixture.handler.ServeHTTP(result, request)
+			if result.Code != test.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", result.Code, test.wantStatus, result.Body.String())
+			}
+			if test.wantBody != "" && !strings.Contains(result.Body.String(), test.wantBody) {
+				t.Fatalf("body missing %q: %s", test.wantBody, result.Body.String())
+			}
+			if result.Code == http.StatusOK && result.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("Cache-Control=%q want=no-store", result.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
 func TestReportsRoutesRemainAbsentWithoutAuthoritativeProvider(t *testing.T) {
 	fixture := newResourceAuthFixture(t)
 	for _, path := range []string{
 		"/api/v1/ui/reports/resources",
 		"/api/v1/ui/reports/audit",
+		"/reports/resources",
+		"/reports/audit",
 	} {
 		result := httptest.NewRecorder()
 		fixture.handler.ServeHTTP(result, httptest.NewRequest(http.MethodGet, path, nil))
