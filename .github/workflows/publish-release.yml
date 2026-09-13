@@ -39,6 +39,16 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           notes="docs/RELEASE_${version}_RU.md"
           test -f "$notes"
+          if [[ "$version" == '0.32.0' ]]; then
+            grep -Fxq 'Статус: **PUBLIC STABLE RELEASE**.' "$notes" || {
+              echo 'Control Center 0.32 release notes are not in final Public Stable state' >&2
+              exit 1
+            }
+            if grep -Eiq 'PREPARED|НЕ RELEASE CANDIDATE|НЕ PUBLIC STABLE|candidate-only' "$notes"; then
+              echo 'Control Center 0.32 release notes still contain candidate-only wording' >&2
+              exit 1
+            fi
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           echo "notes=$notes" >> "$GITHUB_OUTPUT"
