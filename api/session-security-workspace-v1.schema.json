@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://control-center.local/api/session-security-workspace-v1.schema.json",
+  "title": "Control Center self-only session security workspace v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "data_state", "self_only", "sessions", "mutation_authorized"],
+  "properties": {
+    "schema": {"const": "ui.session-security-workspace/v1"},
+    "data_state": {"enum": ["loaded", "unavailable"]},
+    "self_only": {"const": true},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "username", "display_name"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "username": {"type": "string", "minLength": 1, "maxLength": 128},
+        "display_name": {"type": "string", "maxLength": 256}
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["absolute_ttl_seconds", "idle_timeout_seconds", "activity_refreshes_idle_deadline", "activity_extends_absolute_expiry"],
+      "properties": {
+        "absolute_ttl_seconds": {"type": "integer", "minimum": 60, "maximum": 604800},
+        "idle_timeout_seconds": {"type": "integer", "minimum": 60, "maximum": 604800},
+        "activity_refreshes_idle_deadline": {"type": "boolean"},
+        "activity_extends_absolute_expiry": {"const": false}
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "created_at", "last_activity_at", "idle_expires_at", "expires_at", "current", "idle_remaining_seconds", "absolute_remaining_seconds", "revocation_risk"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 128},
+          "created_at": {"type": "string", "format": "date-time"},
+          "last_activity_at": {"type": "string", "format": "date-time"},
+          "idle_expires_at": {"type": "string", "format": "date-time"},
+          "expires_at": {"type": "string", "format": "date-time"},
+          "source_ip": {"type": "string", "maxLength": 128},
+          "user_agent": {"type": "string", "maxLength": 512},
+          "current": {"type": "boolean"},
+          "idle_remaining_seconds": {"type": "integer", "minimum": 0, "maximum": 604800},
+          "absolute_remaining_seconds": {"type": "integer", "minimum": 0, "maximum": 604800},
+          "revocation_risk": {"enum": ["revoke-session", "logs-out-current-session"]}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"current": {"const": true}}, "required": ["current"]},
+            "then": {"properties": {"revocation_risk": {"const": "logs-out-current-session"}}},
+            "else": {"properties": {"revocation_risk": {"const": "revoke-session"}}}
+          }
+        ]
+      }
+    },
+    "mutation_authorized": {"const": false}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"data_state": {"const": "loaded"}}, "required": ["data_state"]},
+      "then": {
+        "required": ["identity", "policy"],
+        "properties": {"sessions": {"minItems": 1}}
+      },
+      "else": {
+        "properties": {"sessions": {"maxItems": 0}},
+        "not": {"anyOf": [{"required": ["identity"]}, {"required": ["policy"]}]}
+      }
+    }
+  ]
+}
