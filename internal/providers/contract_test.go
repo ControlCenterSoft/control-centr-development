@@ -83,14 +83,14 @@ func TestBindingValidate(t *testing.T) {
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		},
-		ProviderID:       "proxmox-ve",
-		ProviderVersion:  "1.0.0",
-		ContractVersion:  "1",
-		ProductFamily:    "Proxmox VE",
-		ProductVersion:   "9.2",
+		ProviderID:      "proxmox-ve",
+		ProviderVersion: "1.0.0",
+		ContractVersion: "1",
+		ProductFamily:   "Proxmox VE",
+		ProductVersion:  "9.2",
 		ManagementLevel: ManagementManaged,
-		TargetRef:        "cluster-a",
-		Health:           BindingHealthy,
+		TargetRef:       "cluster-a",
+		Health:          BindingHealthy,
 	}
 	if err := binding.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
