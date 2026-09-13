@@ -4,9 +4,11 @@
 
 ## 1. Текущий релизный статус
 
-Текущий опубликованный Public Stable — **0.31.0**. Release train 0.31 завершён, однако у опубликованного Linux archive 0.31.0 известен package-shape defect: отсутствует обязательный `scripts/migrate.sh`. Immutable tag/release/assets 0.31.0 не переписываются. Corrective patch identity — **0.31.1**; её публикация требует отдельной qualification и promotion.
+Текущий опубликованный Public Stable — **0.31.1**. Это corrective patch без расширения feature scope: он исправляет package/install boundary опубликованного 0.31.0 и восстанавливает обязательное наличие исполняемого `scripts/migrate.sh` в Linux AMD64 package. Подтверждены clean install и поддерживаемые переходы `0.30.0 → 0.31.1` и `0.31.0 → 0.31.1`. Immutable tag/release/assets 0.31.0 не переписываются и остаются исторической release identity.
 
-Линия **0.32.0** — текущая COMMITTED development line: Health / Incidents / Audit / Reports. Наличие merged code или contracts не означает Public Stable до прохождения собственного release cycle.
+Линия **0.32.0** — текущая ближайшая COMMITTED development line: Health / Incidents / Audit / Reports. Наличие merged code или contracts не означает Public Stable до прохождения собственного release cycle.
+
+Параллельно начата ранняя foundation-реализация **0.43.0** в пределах уже замороженного архитектурного scope. Это не меняет очередность ближайшего release train 0.32 и не предоставляет 0.43 RC/Public Stable authority.
 
 ## 2. Неизменяемые правила
 
@@ -47,7 +49,7 @@ Recovery foundation предшествует HA. Planning UI предшеств�
 
 ## 5. Milestone 0.43 — Architecture Freeze
 
-**0.43.0 — PLANNED. Managed Provider Framework + Infrastructure Solutions Foundation + Intent / Synthesis / Expansion + Market Platform v2.**
+**0.43.0 — COMMITTED, ранняя параллельная foundation-реализация; НЕ RC / НЕ Public Stable. Managed Provider Framework + Infrastructure Solutions Foundation + Intent / Synthesis / Expansion + Market Platform v2.**
 
 Фундаментальная архитектура 0.43 заморожена в:
 
@@ -154,4 +156,4 @@ Capability готова только при наличии:
 
 ## 12. Product boundary
 
-Control Center — самостоятельный infrastructure control plane. Product documentation не раскрывает внутреннюю development/CI methodology, внутренние адреса, repository mechanics, secrets или иные служебные данные.
+Control Center — самостоятельный infrastructure control plane. Публичная продуктовая документация не раскрывает внутреннюю методологию разработки и сборки, служебную инфраструктуру, внутренние адреса, секреты, рабочие репозитории/ветки или иные внутренние данные, не требующиеся пользователю и администратору продукта.
