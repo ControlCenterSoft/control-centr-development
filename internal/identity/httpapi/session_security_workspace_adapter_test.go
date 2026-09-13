@@ -47,7 +47,7 @@ func TestSessionSecurityWorkspaceAdapterUsesAuthenticatedSelfOnlyContext(t *test
 
 func TestSessionSecurityWorkspaceAdapterCannotBypassFirstLogin(t *testing.T) {
 	fixture := newHTTPFixture(t)
-	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"admin"}`))
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader("{\"username\":\"admin\",\"password\":\"admin\"}"))
 	loginRequest.Header.Set("Content-Type", "application/json")
 	loginResult := httptest.NewRecorder()
 	fixture.server.ServeHTTP(loginResult, loginRequest)
