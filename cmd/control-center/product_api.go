@@ -27,6 +27,7 @@ type productHandlerConfig struct {
 	lifecycleProjection     nodelifecycle.Projection
 	infrastructureInventory productui.InfrastructureInventoryProvider
 	changesJobs             productui.ChangesJobsProvider
+	healthOverview          productui.HealthOverviewProvider
 	resourceReports         productui.OperationalReportProvider
 	auditReports            productui.OperationalReportProvider
 }
@@ -61,6 +62,17 @@ func withChangesJobsProvider(provider productui.ChangesJobsProvider) productHand
 	return func(config *productHandlerConfig) {
 		if provider != nil {
 			config.changesJobs = provider
+		}
+	}
+}
+
+// withHealthOverviewProvider wires only an already-bounded authoritative
+// Health projection. The route remains absent when no provider is configured;
+// callers cannot select or switch the source through request parameters.
+func withHealthOverviewProvider(provider productui.HealthOverviewProvider) productHandlerOption {
+	return func(config *productHandlerConfig) {
+		if provider != nil {
+			config.healthOverview = provider
 		}
 	}
 }
@@ -140,6 +152,9 @@ func newProductHandler(identity *identityapi.Server, options ...productHandlerOp
 	}
 	if config.changesJobs != nil {
 		mux.Handle("GET /api/v1/ui/changes-jobs", guard(rbac.PermissionJobsRead, uiapi.ChangesJobsHandler(config.changesJobs)))
+	}
+	if config.healthOverview != nil {
+		mux.Handle("GET /api/v1/ui/health", guard(rbac.PermissionResourcesRead, uiapi.HealthOverviewHandler(config.healthOverview)))
 	}
 	if config.resourceReports != nil {
 		mux.Handle("GET /api/v1/ui/reports/resources", guard(rbac.PermissionResourcesRead, uiapi.OperationalReportHandler(config.resourceReports)))
