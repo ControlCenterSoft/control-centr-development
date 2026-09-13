@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
 
 	"control-center/internal/buildinfo"
 	"control-center/internal/identity/audit"
@@ -89,19 +90,13 @@ body{font-family:system-ui;max-width:72rem;margin:4vh auto;padding:1rem}table{bo
 <p><a href="/overview">Вернуться к обзору</a></p>
 </main><footer class="muted">Control Center {{.Version}}</footer></body></html>`))
 
-type sessionSecurityWorkspacePage struct {
-	Version   string
-	Workspace interface {
-	}
-}
-
 func (s *Server) webSessionSecurityWorkspace(w http.ResponseWriter, r *http.Request) {
 	principal, ok := PrincipalFromContext(r.Context())
 	if !ok {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	workspace, err := s.buildSessionSecurityWorkspace(r.Context(), principal, remoteIP(r), nowUTC())
+	workspace, err := s.buildSessionSecurityWorkspace(r.Context(), principal, remoteIP(r), time.Now().UTC())
 	if err != nil {
 		http.Error(w, "Session security workspace is temporarily unavailable", http.StatusServiceUnavailable)
 		return
@@ -178,5 +173,3 @@ func (s *Server) webRevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 	s.clearSessionCookie(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
-
-var nowUTC = func() time.Time { return time.Now().UTC() }
