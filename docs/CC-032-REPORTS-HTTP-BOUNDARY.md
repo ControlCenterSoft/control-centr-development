@@ -1,6 +1,8 @@
 # Control Center 0.32 — Reports / Evidence Drawer HTTP boundary
 
-Этот source-only slice готовит следующий непокрытый слой milestone 0.32 после квалифицированных Incidents, Audit export, Health Overview, Reports/Evidence Drawer contracts и Health/Incidents/Audit → Reports adapters. Он намеренно **не регистрирует production route** и поэтому не создаёт runner-зависимую activation claim.
+Статус: **EXACT-CURRENT-MAIN QUALIFICATION CANDIDATE / SOURCE-ONLY / NOT PUBLIC STABLE**.
+
+Этот source-only slice готовит следующий непокрытый слой milestone 0.32 после квалифицированных Incidents, Audit export, Health Overview, Reports/Evidence Drawer contracts и Health/Incidents/Audit → Reports adapters. Он намеренно **не регистрирует production route** и поэтому не создаёт неподтверждённую activation claim.
 
 ## Модель
 
@@ -20,6 +22,12 @@ Outer route registration остаётся отдельным integration gate и
 - client не выбирает actor, permission, provider или source;
 - HTTP слой GET-only, `no-store`, `nosniff`, без mutation/execution/remediation authority;
 - provider error, unavailable state или failed canonical validation работают fail-closed.
+
+## Qualification
+
+Ветка основана непосредственно на текущем canonical `main` после интеграции PR #201 и содержит только Reports/Evidence Drawer provider/validator, HTTP adapter, focused negative/security tests и этот документ. Для exact head требуется один штатный `pull_request` Public CI: public-safety, format/vet, unit/contract, build, PostgreSQL 15–18 clean-install/supported-upgrade/adapters и race/restart. Не запускать `workflow_dispatch`, synthetic load, duplicate checks или unchanged rerun; не отменять и не вытеснять другие Control Center jobs.
+
+PASS этого прохода квалифицирует только source HTTP boundary. Production route registration, точный authoritative provider и его RBAC permission, route reachability, anonymous/first-login/RBAC denial, UI/accessibility и cross-source privilege-widening checks остаются отдельным последующим activation gate.
 
 ## Что подготовлено для следующего runner-потока
 
