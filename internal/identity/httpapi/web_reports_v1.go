@@ -9,18 +9,18 @@ import (
 )
 
 type operationalReportPageData struct {
-	Version      string
-	DisplayName  string
-	Username     string
-	SourceLabel  string
-	Report       productui.OperationalReport
-	Unavailable  bool
+	Version     string
+	DisplayName string
+	Username    string
+	SourceLabel string
+	Report      productui.OperationalReport
+	Unavailable bool
 }
 
 var operationalReportTemplate = template.Must(template.New("reports-v1").Funcs(template.FuncMap{
 	"reportState": reportStateLabel,
-	"freshness":  reportFreshnessLabel,
-	"observed":   formatReportTime,
+	"freshness":   reportFreshnessLabel,
+	"observed":    formatReportTime,
 }).Parse(`<!doctype html>
 <html lang="ru" data-locale="ru-RU">
 <head>
