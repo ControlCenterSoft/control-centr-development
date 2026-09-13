@@ -6,29 +6,37 @@
 
 ## Что подготовлено
 
-- `internal/releasecandidate/release032.go` — exact-bound readiness/artifact policy для 0.32 поверх Public Stable 0.31.0.
-- `internal/releasecandidate/release032_test.go` — fail-closed тестовый код policy.
-- `api/release-candidate-readiness-0.32-v1.schema.json` — closed public schema readiness snapshot.
+- `internal/releasecandidate/release032.go` — exact-bound readiness/artifact policy для 0.32 поверх текущего Public Stable 0.31.1.
+- `internal/releasecandidate/release032_test.go` — fail-closed тестовый код policy, включая отказ от superseded 0.31.0 Stable identity.
+- `api/release-candidate-readiness-0.32-v1.schema.json` — closed public schema readiness snapshot, жёстко связанная с `v0.31.1` и его Linux artifact SHA-256.
 - `third_party/manifest-0.32.json` + `scripts/generate-sbom-032.py` — dependency/license/SBOM evidence, заново привязанное к 0.32.
 - `scripts/build-candidate-032.sh` — reproducible exact-SHA candidate packaging.
-- `scripts/qualify-candidate-032.sh` — clean install, exact Stable 0.31 → 0.32 upgrade, immutable migration check, snapshot rollback и forward recovery.
-- `scripts/qualify-scope-032.py` — source-bound проверка полного Health / Incidents / Audit / Reports scope; до интеграции Health и Incident browser line обязана fail closed.
-- `scripts/aggregate-release-evidence-032.py` — aggregation уже существующих CI results + exact scope/artifact evidence без дублирования upstream checks.
+- `scripts/qualify-candidate-032.sh` — clean install, exact Stable 0.31.1 → 0.32 upgrade, immutable migration check, snapshot rollback и forward recovery.
+- `scripts/qualify-scope-032.py` — source-bound проверка полного Health / Incidents / Audit / Reports scope; до интеграции обязательных browser/provider линий она обязана fail closed.
+- `scripts/aggregate-release-evidence-032.py` — aggregation уже существующих CI results + exact scope/artifact evidence без дублирования upstream checks; Stable evidence дополнительно сверяется по версии и artifact digest.
 - `.github/workflows/cc032-release-gate.yml` — reusable `workflow_call`, который не имеет собственного `push`, `pull_request` или `workflow_dispatch` trigger.
 - `.github/workflows/publish-release.yml` — подготовлена отдельная ветвь проверки 0.32 evidence; future versions по-прежнему fail closed.
 - release/readiness/upgrade документация 0.32.
 
-## Известная Stable 0.31 package boundary
+## Canonical Stable 0.31.1 boundary
 
-Опубликованный `control-center-0.31.0-linux-amd64.tar.gz` имеет immutable SHA-256:
+Текущий официальный Public Stable — `v0.31.1`, опубликованный как corrective patch без расширения feature/schema scope 0.31. Его canonical Linux artifact:
 
-`0b270edcf1d17bd6a38fa3f77b78c4112d43fb945582ee2d25cd91daf38cf06c`
+`control-center-0.31.1-linux-amd64.tar.gz`
 
-В этом историческом binary archive отсутствует `scripts/migrate.sh`. 0.32 qualifier **не исправляет опубликованный архив**: он восстанавливает migration runner только из exact tag `v0.31.0` и требует pinned SHA-256 `6965ea551bddd809bc23eee17ed56b828a71b0d294761f0210bb9a6dc8c12f3d`, как canonical Stable verification path. Любой другой archive shape/helper fail closed.
+имеет immutable SHA-256:
+
+`b9d6467c7c95a6e7e8597398c1b6e7327d319058d248e9cd0416c5baf9699c97`.
+
+Tag/source identity: `v0.31.1` / `3c9999fb5b056dad9d8dda9cf45809acb021497e`.
+
+В отличие от исторического 0.31.0 archive, 0.31.1 package уже содержит штатный executable `scripts/migrate.sh`. Поэтому 0.32 qualifier не восстанавливает helper из raw source и не использует прежний 0.31.0 workaround. Он обязан скачать exact 0.31.1 archive, проверить pinned SHA-256, package `VERSION`, наличие executable migration runner и byte-for-byte immutable migrations `0001`–`0012` перед upgrade.
+
+`v0.31.0` остаётся immutable исторической identity, но после выпуска 0.31.1 не является допустимой canonical Stable base для нового 0.32 release evidence.
 
 ## Когда runner-поток может использовать work package
 
-Только после того, как exact release candidate содержит весь обязательный 0.32 scope. На момент подготовки source-only work отдельные Health HTTP/Web/provider изменения и Incident browser изменения ещё не должны считаться release evidence до собственной qualification/integration.
+Только после того, как exact release candidate содержит весь обязательный 0.32 scope. Открытые PR/ветки не считаются частью release scope до собственной qualification и integration. На момент последней сверки open PR #207 с Incident browser UI остаётся отдельным runner-потоком и не должен дублироваться этим package.
 
 Runner-поток должен сначала сверить текущий `main`; PASS/branch SHA из прошлого прохода нельзя переносить на новый candidate.
 
@@ -41,7 +49,7 @@ Runner-поток должен сначала сверить текущий `mai
 - exact `${{ github.sha }}` / PR head SHA согласно canonical CI identity policy;
 - фактические `needs.<job>.result` существующих jobs.
 
-Reusable gate повторно **не запускает** эти generic checks. Он выполняет только release-specific scope qualification, packaging, official Stable 0.31 artifact upgrade/rollback и aggregation already-produced upstream results.
+Reusable gate повторно **не запускает** эти generic checks. Он выполняет только release-specific scope qualification, packaging, official Stable 0.31.1 artifact upgrade/rollback и aggregation already-produced upstream results.
 
 Evidence artifact должен называться:
 
@@ -69,7 +77,8 @@ Readiness snapshot сохраняет `commercial_legal_clearance=blocked`, ес
 
 ## Запрещённые shortcut
 
-- не переносить PASS 0.31 или другого 0.32 SHA;
+- не переносить PASS 0.31.0, 0.31.1 или другого 0.32 SHA на новый candidate;
+- не использовать superseded `v0.31.0` как текущую Stable base;
 - не редактировать опубликованные Stable migrations;
 - не считать open PR/ветку частью scope до integration;
 - не обходить Health/Incident/Audit/Reports source qualifier;
