@@ -1,0 +1,183 @@
+name: Control Center 0.32 exact release gate
+
+on:
+  workflow_call:
+    inputs:
+      candidate_sha:
+        description: Exact Control Center 0.32 candidate SHA
+        required: true
+        type: string
+      public_safety:
+        required: true
+        type: string
+      static_analysis:
+        required: true
+        type: string
+      unit:
+        required: true
+        type: string
+      build:
+        required: true
+        type: string
+      postgres_migration:
+        required: true
+        type: string
+      postgres_adapter:
+        required: true
+        type: string
+      race:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: 0.32 exact candidate / Stable 0.31 upgrade / readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Validate exact caller evidence
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PUBLIC_SAFETY: ${{ inputs.public_safety }}
+          STATIC_ANALYSIS: ${{ inputs.static_analysis }}
+          UNIT: ${{ inputs.unit }}
+          BUILD: ${{ inputs.build }}
+          POSTGRES_MIGRATION: ${{ inputs.postgres_migration }}
+          POSTGRES_ADAPTER: ${{ inputs.postgres_adapter }}
+          RACE: ${{ inputs.race }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          for value in "$PUBLIC_SAFETY" "$STATIC_ANALYSIS" "$UNIT" "$BUILD" "$POSTGRES_MIGRATION" "$POSTGRES_ADAPTER" "$RACE"; do
+            [[ "$value" == success ]]
+          done
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ inputs.candidate_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Require exact 0.32 source identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$CANDIDATE_SHA" ]]
+          [[ "$(tr -d '[:space:]' < VERSION)" == '0.32.0' ]]
+          [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]]
+
+      - name: Qualify exact 0.32 Roadmap scope
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release-032
+          python3 scripts/qualify-scope-032.py \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --output dist/release-032/control-center-0.32.0.scope-evidence.json
+
+      - name: Qualify packaging and Stable 0.31 lifecycle
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          bash scripts/qualify-candidate-032.sh
+
+      - name: Aggregate exact engineering release evidence
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/aggregate-release-evidence-032.py \
+            --candidate-dir dist/candidate-0.32.0 \
+            --candidate-sha "$CANDIDATE_SHA" \
+            --scope-evidence dist/release-032/control-center-0.32.0.scope-evidence.json \
+            --workflow-run-id "${GITHUB_RUN_ID}" \
+            --workflow-run-attempt "${GITHUB_RUN_ATTEMPT}" \
+            --public-safety '${{ inputs.public_safety }}' \
+            --static-analysis '${{ inputs.static_analysis }}' \
+            --unit '${{ inputs.unit }}' \
+            --build '${{ inputs.build }}' \
+            --postgres-migration '${{ inputs.postgres_migration }}' \
+            --postgres-adapter '${{ inputs.postgres_adapter }}' \
+            --race '${{ inputs.race }}' \
+            --workflow-evidence-output dist/release-032/control-center-0.32.0.workflow-evidence.json \
+            --readiness-output dist/release-032/control-center-0.32.0.readiness.json
+
+      - name: Require fail-closed Product Public Stable readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          validator_dir="$(mktemp -d "$PWD/.cc032-readiness-validator.XXXXXX")"
+          trap 'rm -rf "$validator_dir"' EXIT
+          cat > "$validator_dir/main.go" <<'GO'
+          package main
+          import (
+            "encoding/json"
+            "fmt"
+            "os"
+            "control-center/internal/releasecandidate"
+          )
+          func main() {
+            raw, err := os.ReadFile(os.Args[1]); if err != nil { panic(err) }
+            var snapshot releasecandidate.Snapshot
+            if err := json.Unmarshal(raw, &snapshot); err != nil { panic(err) }
+            product, err := releasecandidate.EvaluateProductStable032(snapshot); if err != nil { panic(err) }
+            if !product.Ready || len(product.Blockers) != 0 {
+              panic(fmt.Sprintf("0.32 product Stable readiness blocked: %v", product.Blockers))
+            }
+            commercial, err := releasecandidate.Evaluate032(snapshot); if err != nil { panic(err) }
+            if commercial.Ready || len(commercial.Blockers) != 1 || commercial.Blockers[0] != releasecandidate.GateCommercialLegal {
+              panic(fmt.Sprintf("0.32 commercial boundary invalid: ready=%v blockers=%v", commercial.Ready, commercial.Blockers))
+            }
+            fmt.Println("CC_032_PRODUCT_PUBLIC_STABLE_READINESS=PASS")
+            fmt.Println("CC_032_COMMERCIAL_LEGAL_CLEARANCE=BLOCKED_SEPARATELY")
+          }
+          GO
+          go run "$validator_dir/main.go" dist/release-032/control-center-0.32.0.readiness.json
+
+      - name: Preserve exact 0.32 release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: control-center-0.32.0-release-evidence-${{ inputs.candidate_sha }}
+          path: |
+            dist/candidate-0.32.0/
+            dist/release-032/control-center-0.32.0.scope-evidence.json
+            dist/release-032/control-center-0.32.0.workflow-evidence.json
+            dist/release-032/control-center-0.32.0.readiness.json
+          if-no-files-found: error
+          retention-days: 30
