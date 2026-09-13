@@ -54,6 +54,32 @@ func TestAuthorizeForwardingAllowsExplicitInternalInterZoneRouting(t *testing.T)
 	}
 }
 
+func TestAuthorizeForwardingRejectsSupportZonesAsTransit(t *testing.T) {
+	tests := []ForwardingIntent{
+		{Source: ZoneSupportLAN, Destination: ZoneManagement, ExplicitlyEnabled: true, EdgeGatewayAssigned: true},
+		{Source: ZoneManagement, Destination: ZoneSupportLAN, ExplicitlyEnabled: true, EdgeGatewayAssigned: true},
+		{Source: ZoneSupportWAN, Destination: ZoneWAN, ExplicitlyEnabled: true, EdgeGatewayAssigned: true},
+		{Source: ZoneWAN, Destination: ZoneSupportWAN, ExplicitlyEnabled: true, EdgeGatewayAssigned: true},
+		{Source: ZoneSupportLAN, Destination: ZoneSupportWAN, ExplicitlyEnabled: true, EdgeGatewayAssigned: true},
+	}
+	for _, intent := range tests {
+		if err := AuthorizeForwarding(intent); !errors.Is(err, ErrSupportZoneTransitDenied) {
+			t.Fatalf("AuthorizeForwarding(%s -> %s) error = %v, want ErrSupportZoneTransitDenied", intent.Source, intent.Destination, err)
+		}
+	}
+}
+
+func TestSupportZonesAreValidClassifications(t *testing.T) {
+	for _, zone := range []Zone{ZoneSupportLAN, ZoneSupportWAN} {
+		if !zone.Valid() {
+			t.Fatalf("support zone %q is not valid", zone)
+		}
+	}
+	if err := AuthorizeForwarding(ForwardingIntent{Source: ZoneSupportLAN, Destination: ZoneSupportLAN}); err != nil {
+		t.Fatalf("same-zone support traffic should not be treated as routed forwarding: %v", err)
+	}
+}
+
 func TestAuthorizeForwardingRejectsUnknownZone(t *testing.T) {
 	err := AuthorizeForwarding(ForwardingIntent{Source: Zone("UNKNOWN"), Destination: ZoneLAN})
 	if !errors.Is(err, ErrInvalidZone) {
