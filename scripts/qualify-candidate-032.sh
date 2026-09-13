@@ -11,6 +11,7 @@ done
 candidate_version=0.32.0
 stable_version=0.31.0
 stable_sha256=0b270edcf1d17bd6a38fa3f77b78c4112d43fb945582ee2d25cd91daf38cf06c
+stable_migrate_sha256=6965ea551bddd809bc23eee17ed56b828a71b0d294761f0210bb9a6dc8c12f3d
 candidate_sha="${CANDIDATE_SHA:-$(git rev-parse HEAD)}"
 [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid exact candidate SHA" >&2; exit 2; }
 [[ "$(tr -d '\r\n' < VERSION)" == "$candidate_version" ]] || { echo "source VERSION must be 0.32.0 before qualification" >&2; exit 2; }
@@ -89,8 +90,20 @@ curl --fail --location --silent --show-error --retry 3 --connect-timeout 10 --ma
 echo "$stable_sha256  $stable_artifact" | sha256sum -c -
 tar -xzf "$stable_artifact" -C "$work/stable"
 stable_root="$work/stable/control-center-$stable_version"
-[[ -x "$stable_root/scripts/migrate.sh" ]]
 [[ -d "$stable_root/migrations" ]]
+
+# Public Stable 0.31.0 is immutable and has a known package-shape defect: the
+# binary archive contains migrations but omits scripts/migrate.sh. Reconstruct
+# the supported installed-state migration runner only from the same immutable
+# tag and require its pinned SHA-256. Do not silently accept a different archive
+# shape or an unpinned helper.
+[[ ! -e "$stable_root/scripts/migrate.sh" ]] || { echo "unexpected Stable 0.31 package shape: migrate.sh appeared" >&2; exit 1; }
+mkdir -p "$stable_root/scripts"
+curl --fail --location --silent --show-error --retry 3 --connect-timeout 10 --max-time 60 \
+  "https://raw.githubusercontent.com/ControlCenterSoft/control-center-stable/v0.31.0/scripts/migrate.sh" \
+  -o "$stable_root/scripts/migrate.sh"
+echo "$stable_migrate_sha256  $stable_root/scripts/migrate.sh" | sha256sum -c -
+chmod 0755 "$stable_root/scripts/migrate.sh"
 
 # The Public Stable schema is immutable. Candidate 0.32 must contain every
 # published 0.31 migration byte-for-byte plus only additive later migrations.
