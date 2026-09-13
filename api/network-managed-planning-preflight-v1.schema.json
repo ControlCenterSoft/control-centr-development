@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://control-center.local/contracts/network-managed-planning-preflight-v1.schema.json",
+  "title": "Control Center managed network planning preflight v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "plan_id",
+    "node_id",
+    "base_revision_id",
+    "planned_revision_id",
+    "probes",
+    "rollback",
+    "connectivity_verification_required",
+    "mutation_authorized",
+    "apply_authorized",
+    "automatic_rollback_authorized",
+    "forwarding_authorized",
+    "nat_authorized",
+    "external_publication_authorized",
+    "support_remote_access_authorized"
+  ],
+  "properties": {
+    "schema": {"const": "network.managed-planning-preflight/v1"},
+    "plan_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "node_id": {"$ref": "#/$defs/identifier"},
+    "base_revision_id": {"$ref": "#/$defs/identifier"},
+    "planned_revision_id": {"$ref": "#/$defs/identifier"},
+    "probes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {"$ref": "#/$defs/probe"}
+    },
+    "rollback": {"$ref": "#/$defs/rollback"},
+    "connectivity_verification_required": {"const": true},
+    "mutation_authorized": {"const": false},
+    "apply_authorized": {"const": false},
+    "automatic_rollback_authorized": {"const": false},
+    "forwarding_authorized": {"const": false},
+    "nat_authorized": {"const": false},
+    "external_publication_authorized": {"const": false},
+    "support_remote_access_authorized": {"const": false}
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,126}[A-Za-z0-9])?$"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[^\\s\\x00-\\x1f\\x7f/\\\\?#@]+$"
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "source_interface_id", "target"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "kind": {
+          "enum": [
+            "management_reachability",
+            "gateway_reachability",
+            "dns_resolution",
+            "ntp_reachability"
+          ]
+        },
+        "source_interface_id": {"$ref": "#/$defs/identifier"},
+        "target": {"$ref": "#/$defs/target"}
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "previous_revision_id",
+        "operator_confirmation_required",
+        "post_rollback_verification_required",
+        "execution_authorized"
+      ],
+      "properties": {
+        "mode": {"const": "restore_previous_network_state"},
+        "previous_revision_id": {"$ref": "#/$defs/identifier"},
+        "operator_confirmation_required": {"const": true},
+        "post_rollback_verification_required": {"const": true},
+        "execution_authorized": {"const": false}
+      }
+    }
+  }
+}
