@@ -31,11 +31,16 @@ func NewIncidentOperationalReportProvider(reader incidents.Reader, now func() ti
 	return &IncidentOperationalReportProvider{reader: reader, now: now}, nil
 }
 
-// OperationalReport loads the complete bounded incident set before adapting it
-// to ui.operational-report/v1. A truncated, inconsistent or non-progressing
-// pagination boundary fails closed instead of being presented as a complete
-// health picture. MaxReportItems is applied to affected-resource evidence, not
-// merely incident count, because one incident may reference many resources.
+// OperationalReport loads the complete bounded active-incident set before
+// adapting it to ui.operational-report/v1. Resolved incidents remain available
+// through the Incident browser/Audit history but are not accumulated forever in
+// the current resource-health projection; absence of active incidents still
+// yields unknown rather than inventing Healthy.
+//
+// A truncated, inconsistent or non-progressing pagination boundary fails closed
+// instead of being presented as a complete health picture. MaxReportItems is
+// applied to affected-resource evidence, not merely incident count, because one
+// incident may reference many resources.
 func (p *IncidentOperationalReportProvider) OperationalReport(ctx context.Context) (OperationalReport, error) {
 	if p == nil || p.reader == nil || p.now == nil {
 		return OperationalReport{}, errors.New("incident report provider is unavailable")
@@ -45,7 +50,13 @@ func (p *IncidentOperationalReportProvider) OperationalReport(ctx context.Contex
 		return OperationalReport{}, errors.New("incident report trusted time is required")
 	}
 
-	query := incidents.ListQuery{Limit: incidents.MaxListLimit}
+	query, err := incidents.NormalizeListQuery(incidents.ListQuery{
+		Limit:    incidents.MaxListLimit,
+		Statuses: []incidents.Status{incidents.StatusOpen, incidents.StatusAcknowledged},
+	})
+	if err != nil {
+		return OperationalReport{}, fmt.Errorf("initialize incident report query: %w", err)
+	}
 	items := make([]incidents.Incident, 0, incidents.MaxListLimit)
 	seen := make(map[string]struct{})
 	evidenceCount := 0
@@ -63,6 +74,9 @@ func (p *IncidentOperationalReportProvider) OperationalReport(ctx context.Contex
 			incident := page.Items[index]
 			if err := incident.Validate(); err != nil {
 				return OperationalReport{}, fmt.Errorf("incident report source contains invalid item: %w", err)
+			}
+			if incident.Status == incidents.StatusResolved {
+				return OperationalReport{}, fmt.Errorf("incident report source violated active-status filter for %q", incident.ObjectID)
 			}
 			if _, exists := seen[incident.ObjectID]; exists {
 				return OperationalReport{}, fmt.Errorf("incident report source repeated object %q", incident.ObjectID)
@@ -93,8 +107,9 @@ func (p *IncidentOperationalReportProvider) OperationalReport(ctx context.Contex
 			return OperationalReport{}, errors.New("incident report pagination did not advance")
 		}
 		nextQuery, err := incidents.NormalizeListQuery(incidents.ListQuery{
-			Limit:  incidents.MaxListLimit,
-			Before: page.Next,
+			Limit:    incidents.MaxListLimit,
+			Statuses: append([]incidents.Status(nil), query.Statuses...),
+			Before:   page.Next,
 		})
 		if err != nil {
 			return OperationalReport{}, fmt.Errorf("incident report source returned invalid cursor: %w", err)
