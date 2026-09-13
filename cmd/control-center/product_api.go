@@ -26,6 +26,8 @@ type productHandlerConfig struct {
 	lifecycleProjection     nodelifecycle.Projection
 	infrastructureInventory productui.InfrastructureInventoryProvider
 	changesJobs             productui.ChangesJobsProvider
+	resourceReports         productui.OperationalReportProvider
+	auditReports            productui.OperationalReportProvider
 }
 
 type productHandlerOption func(*productHandlerConfig)
@@ -58,6 +60,30 @@ func withChangesJobsProvider(provider productui.ChangesJobsProvider) productHand
 	return func(config *productHandlerConfig) {
 		if provider != nil {
 			config.changesJobs = provider
+		}
+	}
+}
+
+// withResourceReportsProvider registers a report source that is already
+// constrained to ordinary infrastructure/resource evidence. The route keeps
+// the existing global resources.read boundary and cannot be switched by a
+// client to an Audit-backed source.
+func withResourceReportsProvider(provider productui.OperationalReportProvider) productHandlerOption {
+	return func(config *productHandlerConfig) {
+		if provider != nil {
+			config.resourceReports = provider
+		}
+	}
+}
+
+// withAuditReportsProvider registers a report source containing Audit-derived
+// evidence. It is intentionally a distinct option so the route always retains
+// the stronger global audit.events.read boundary instead of sharing the
+// resources.read route merely because both sources use ui.operational-report.
+func withAuditReportsProvider(provider productui.OperationalReportProvider) productHandlerOption {
+	return func(config *productHandlerConfig) {
+		if provider != nil {
+			config.auditReports = provider
 		}
 	}
 }
@@ -110,6 +136,14 @@ func newProductHandler(identity *identityapi.Server, options ...productHandlerOp
 	}
 	if config.changesJobs != nil {
 		mux.Handle("GET /api/v1/ui/changes-jobs", guard(rbac.PermissionJobsRead, uiapi.ChangesJobsHandler(config.changesJobs)))
+	}
+	if config.resourceReports != nil {
+		mux.Handle("GET /api/v1/ui/reports/resources", guard(rbac.PermissionResourcesRead, uiapi.OperationalReportHandler(config.resourceReports)))
+		mux.Handle("GET /api/v1/ui/reports/resources/evidence", guard(rbac.PermissionResourcesRead, uiapi.EvidenceDrawerHandler(config.resourceReports)))
+	}
+	if config.auditReports != nil {
+		mux.Handle("GET /api/v1/ui/reports/audit", guard(rbac.PermissionAuditRead, uiapi.OperationalReportHandler(config.auditReports)))
+		mux.Handle("GET /api/v1/ui/reports/audit/evidence", guard(rbac.PermissionAuditRead, uiapi.EvidenceDrawerHandler(config.auditReports)))
 	}
 	return mux
 }
