@@ -1,8 +1,8 @@
 # Control Center 0.31.0 — Changes / Jobs operational workflow
 
-Статус: **OFFICIAL SOURCE RELEASE после успешной exact-main qualification; готовность к PUBLIC STABLE определяется отдельным техническим promotion gate**.
+Статус: **OFFICIAL PUBLIC STABLE RELEASE**.
 
-Control Center 0.31.0 развивает текущий Public Stable 0.30.0 и вводит основной безопасный operational workflow вокруг типизированных Changes и Jobs. Публикация этой release identity допускается только после успешного CI точного итогового SHA и проверки технического Product Stable readiness. Коммерческий запуск и юридические документы ведутся отдельным контуром и не подменяются техническим release evidence.
+Control Center 0.31.0 опубликован как официальный Public Stable релиз и заменяет 0.30.0 в качестве текущей стабильной версии. Релиз вводит основной безопасный operational workflow вокруг типизированных Changes и Jobs. Коммерческий запуск и юридические документы ведутся отдельным контуром и не подменяют техническое release evidence продукта.
 
 ## Пользовательский результат
 
@@ -33,8 +33,8 @@ Unknown, stale, incomplete, mismatched или противоречивое evide
 - bounded manual-retry admission, atomic retry lineage и повторная revalidation;
 - полный `approval → Job → verification → recovery` operational evidence flow;
 - bounded recovery-path evidence с exact Change/revision binding и fresh verified backup/restore evidence;
-- deterministic candidate packaging, SBOM, THIRD_PARTY_NOTICES, SHA256SUMS, provenance и release manifest;
-- exact-bound release evidence aggregation.
+- deterministic packaging, SBOM, THIRD_PARTY_NOTICES, SHA256SUMS, provenance и release manifest;
+- exact-bound release evidence.
 
 ## Информационная безопасность
 
@@ -56,7 +56,7 @@ Unknown, stale, incomplete, mismatched или противоречивое evide
 
 ## Установка, обновление и восстановление
 
-Техническая qualification точного release SHA обязана подтвердить:
+Для опубликованного 0.31.0 квалифицированы:
 
 - clean install;
 - supported upgrade с Public Stable 0.30.0;
@@ -65,13 +65,15 @@ Unknown, stale, incomplete, mismatched или противоречивое evide
 - PostgreSQL 15/16/17/18 migration и adapter paths;
 - restart/reconnect и race qualification;
 - rollback через сохранённый pre-upgrade state и последующий forward recovery;
-- reproducible exact candidate artifacts и checksums.
+- reproducible release artifacts и checksums.
 
 Обновление не сбрасывает установленный пароль администратора к `admin`. Первоначальный `admin/admin` используется только на чистой установке и требует обязательной смены при первом входе.
 
+Multi-node/HA не следует считать поддерживаемым только по наличию нескольких узлов. Такой режим допускается к публичному заявлению только для отдельно квалифицированного профиля с подтверждёнными failure/recovery, quorum и rollback semantics.
+
 ## Packaging и release evidence
 
-Для точной release identity формируются и проверяются:
+Официальный Public Stable release set содержит и связывает с одной release identity:
 
 - `control-center-0.31.0-linux-amd64.tar.gz`;
 - SHA-256 sidecar и `SHA256SUMS`;
@@ -80,28 +82,25 @@ Unknown, stale, incomplete, mismatched или противоречивое evide
 - `THIRD_PARTY_NOTICES.md`;
 - qualification evidence;
 - provenance;
-- release manifest;
-- bounded exact-SHA readiness snapshot.
+- release manifest.
 
-PASS не переносится между разными SHA. Любой source drift требует новой exact-head qualification.
+Контрольные суммы и release metadata должны проверяться перед установкой или обновлением. Уже опубликованные bytes релиза не заменяются новой сборкой под тем же version/tag.
 
 ## Product Stable и коммерческий запуск
 
-PUBLIC STABLE продукта разрешён только если технический Product Stable evaluator подтверждает все обязательные product gates: operational E2E, packaging, clean install, supported upgrade, rollback/forward recovery, PostgreSQL restart/reconnect, security/privacy и release metadata.
+0.31.0 является технически квалифицированным PUBLIC STABLE продукта. Commercial/legal clearance сохраняется как отдельный контур коммерческого запуска. Отсутствие подготовленных юридических документов не преобразуется в ложный commercial PASS, но не отменяет фактически опубликованный технический Stable.
 
-Commercial/legal clearance сохраняется как отдельный контур коммерческого запуска. Отсутствие подготовленных юридических документов не преобразуется в ложный commercial PASS, но само по себе не блокирует публикацию технически квалифицированного продукта в PUBLIC STABLE. До отдельного commercial clearance продукт и документация не должны заявлять неподтверждённые коммерческие/юридические гарантии.
+До отдельного commercial clearance продукт и документация не должны заявлять неподтверждённые коммерческие, договорные или юридические гарантии. Лицензирование, Support Plans, billing, legal/privacy acceptance и связанные web-порталы вводятся только в пределах отдельно опубликованного и квалифицированного контура.
 
-## Release stop conditions
+## Release integrity
 
-0.31.0 не может быть опубликован как PUBLIC STABLE при любом из следующих условий:
+Для 0.31.0 сохраняются следующие неизменяемые требования:
 
-- false Success или возможность представить непроверенный результат как успешный;
-- stale/mismatched revision, approval, Job version или recovery evidence принимается как current;
-- rollback/recovery path не доказан для risk-bearing operation;
-- migration checksum drift;
-- upgrade сбрасывает пользовательский пароль, данные или настройки;
-- high-risk security/privacy/recovery defect;
-- exact release SHA не прошёл обязательную qualification;
-- отсутствуют или не совпадают обязательные release artifacts/checksums/provenance/evidence.
+- false Success запрещён;
+- stale/mismatched revision, approval, Job version или recovery evidence не принимается как current;
+- migration checksum drift считается дефектом целостности;
+- upgrade не должен сбрасывать пользовательский пароль, данные или настройки;
+- high-risk security/privacy/recovery defect требует отдельного исправляющего release cycle;
+- release artifacts/checksums/provenance/evidence должны оставаться согласованными с опубликованной release identity.
 
-Официальный source release и PUBLIC STABLE promotion являются отдельными защищёнными этапами и должны сохранять одну и ту же квалифицированную release identity либо иметь явно проверенную promotion lineage.
+0.30.0 остаётся предыдущей стабильной версией и исходной точкой квалифицированного upgrade path к 0.31.0.
