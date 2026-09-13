@@ -1,0 +1,52 @@
+openapi: 3.1.0
+info:
+  title: Control Center Session Security Workspace API fragment
+  version: 0.33.0
+security:
+  - bearerAuth: []
+  - sessionCookie: []
+paths:
+  /api/v1/identity/session-security:
+    get:
+      operationId: getOwnSessionSecurityWorkspace
+      summary: Read the authenticated identity's session-security workspace
+      description: >-
+        Returns a bounded self-only projection assembled exclusively from the
+        server-authenticated identity, effective session policy and active own
+        sessions. Query parameters do not select an actor or subject. The
+        operation is unavailable until the mandatory first-login password
+        change is complete. Credential material, token values/digests, role
+        bindings and mutation authority are never returned.
+      responses:
+        '200':
+          description: Current self-only session-security workspace.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [workspace]
+                properties:
+                  workspace:
+                    $ref: './session-security-workspace-v1.schema.json'
+        '401':
+          description: Authentication is missing, expired, revoked or idle-expired.
+        '403':
+          description: The mandatory first-login password change is still required.
+        '503':
+          description: Session policy or active-session evidence is unavailable or inconsistent.
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: cc_session
