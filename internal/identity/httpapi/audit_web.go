@@ -18,7 +18,6 @@ type auditWebEvent struct {
 	ActorID    string
 	SubjectID  string
 	EventID    string
-	Hash       string
 }
 
 type auditWebPageData struct {
@@ -55,7 +54,7 @@ var auditWebTemplate = template.Must(template.New("audit-web").Parse(`<!doctype 
 <label>Outcome<input name="outcome" value="{{.Outcome}}" maxlength="32" autocomplete="off"></label>
 <label>Actor ID<input name="actor_id" value="{{.ActorID}}" maxlength="128" autocomplete="off"></label>
 <label>Subject ID<input name="subject_id" value="{{.SubjectID}}" maxlength="256" autocomplete="off"></label>
-<label>Лимит<select name="limit">{{range $value := auditLimits}}<option value="{{$value}}" {{if eq $.Limit $value}}selected{{end}}>{{$value}}</option>{{end}}</select></label>
+<label>Лимит<select name="limit"><option value="10" {{if eq .Limit 10}}selected{{end}}>10</option><option value="25" {{if eq .Limit 25}}selected{{end}}>25</option><option value="50" {{if eq .Limit 50}}selected{{end}}>50</option><option value="100" {{if eq .Limit 100}}selected{{end}}>100</option></select></label>
 <div class="actions"><button type="submit">Применить</button><a href="/audit">Сбросить</a><a href="{{.ExportURL}}">Экспорт текущей страницы CSV</a></div>
 </form>
 {{if .Events}}
@@ -66,12 +65,6 @@ var auditWebTemplate = template.Must(template.New("audit-web").Parse(`<!doctype 
 </main>
 </body>
 </html>`))
-
-func init() {
-	auditWebTemplate = template.Must(auditWebTemplate.Funcs(template.FuncMap{
-		"auditLimits": func() []int { return []int{10, 25, 50, 100} },
-	}).Parse(""))
-}
 
 func (s *Server) webAudit(w http.ResponseWriter, r *http.Request) {
 	principal, _ := PrincipalFromContext(r.Context())
@@ -109,8 +102,11 @@ func (s *Server) webAudit(w http.ResponseWriter, r *http.Request) {
 		event := entry.Event
 		events = append(events, auditWebEvent{
 			OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339),
-			Action: event.Action, Outcome: event.Outcome, ActorID: event.ActorID,
-			SubjectID: event.SubjectID, EventID: event.ID, Hash: event.Hash,
+			Action: event.Action,
+			Outcome: event.Outcome,
+			ActorID: event.ActorID,
+			SubjectID: event.SubjectID,
+			EventID: event.ID,
 		})
 	}
 	values := url.Values{}
