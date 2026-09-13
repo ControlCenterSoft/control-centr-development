@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 )
 
 // ValidateHealthOverview rejects malformed, contradictory or non-canonical
@@ -81,6 +82,12 @@ func ValidateHealthOverview(view HealthOverview) error {
 }
 
 func validateHealthSignalView(signal HealthSignalView) (HealthSignalView, error) {
+	signal.ID = strings.TrimSpace(signal.ID)
+	signal.ResourceKind = strings.TrimSpace(signal.ResourceKind)
+	signal.ResourceID = strings.TrimSpace(signal.ResourceID)
+	signal.CheckName = strings.TrimSpace(signal.CheckName)
+	signal.RunbookRef = strings.TrimSpace(signal.RunbookRef)
+
 	if err := validateHealthBoundedText("signal id", signal.ID, maxSignalIDLength); err != nil {
 		return HealthSignalView{}, err
 	}
