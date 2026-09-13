@@ -130,9 +130,14 @@ components:
     CapabilitySpec:
       type: object
       additionalProperties: false
-      required: [id, mutation, risk_class, idempotency]
+      required: [id, management_levels, mutation, risk_class, idempotency]
       properties:
         id: { $ref: '#/components/schemas/ProviderIdentifier' }
+        management_levels:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/ManagementLevel' }
         mutation: { type: boolean }
         risk_class: { $ref: '#/components/schemas/RiskClass' }
         required_permissions:
