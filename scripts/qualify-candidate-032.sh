@@ -9,9 +9,8 @@ for command in curl createdb dropdb pg_dump pg_restore psql sha256sum tar python
 done
 
 candidate_version=0.32.0
-stable_version=0.31.0
-stable_sha256=0b270edcf1d17bd6a38fa3f77b78c4112d43fb945582ee2d25cd91daf38cf06c
-stable_migrate_sha256=6965ea551bddd809bc23eee17ed56b828a71b0d294761f0210bb9a6dc8c12f3d
+stable_version=0.31.1
+stable_sha256=b9d6467c7c95a6e7e8597398c1b6e7327d319058d248e9cd0416c5baf9699c97
 candidate_sha="${CANDIDATE_SHA:-$(git rev-parse HEAD)}"
 [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid exact candidate SHA" >&2; exit 2; }
 [[ "$(tr -d '\r\n' < VERSION)" == "$candidate_version" ]] || { echo "source VERSION must be 0.32.0 before qualification" >&2; exit 2; }
@@ -91,22 +90,12 @@ echo "$stable_sha256  $stable_artifact" | sha256sum -c -
 tar -xzf "$stable_artifact" -C "$work/stable"
 stable_root="$work/stable/control-center-$stable_version"
 [[ -d "$stable_root/migrations" ]]
+[[ "$(tr -d '\r\n' < "$stable_root/VERSION")" == "$stable_version" ]] || { echo "Stable package VERSION mismatch" >&2; exit 1; }
+[[ -x "$stable_root/scripts/migrate.sh" ]] || { echo "Stable 0.31.1 package is missing executable scripts/migrate.sh" >&2; exit 1; }
 
-# Public Stable 0.31.0 is immutable and has a known package-shape defect: the
-# binary archive contains migrations but omits scripts/migrate.sh. Reconstruct
-# the supported installed-state migration runner only from the same immutable
-# tag and require its pinned SHA-256. Do not silently accept a different archive
-# shape or an unpinned helper.
-[[ ! -e "$stable_root/scripts/migrate.sh" ]] || { echo "unexpected Stable 0.31 package shape: migrate.sh appeared" >&2; exit 1; }
-mkdir -p "$stable_root/scripts"
-curl --fail --location --silent --show-error --retry 3 --connect-timeout 10 --max-time 60 \
-  "https://raw.githubusercontent.com/ControlCenterSoft/control-center-stable/v0.31.0/scripts/migrate.sh" \
-  -o "$stable_root/scripts/migrate.sh"
-echo "$stable_migrate_sha256  $stable_root/scripts/migrate.sh" | sha256sum -c -
-chmod 0755 "$stable_root/scripts/migrate.sh"
-
-# The Public Stable schema is immutable. Candidate 0.32 must contain every
-# published 0.31 migration byte-for-byte plus only additive later migrations.
+# Public Stable 0.31.1 is the canonical immutable upgrade base. Candidate 0.32
+# must contain every published Stable migration byte-for-byte plus only additive
+# later migrations. Historical 0.31.0 package-shape recovery is not used here.
 while IFS= read -r stable_migration; do
   name="$(basename "$stable_migration")"
   candidate_migration="$candidate_root/migrations/$name"
@@ -157,20 +146,20 @@ qualification="$out/control-center-$candidate_version.qualification.json"
 provenance="$out/control-center-$candidate_version.provenance.json"
 release_manifest="$out/control-center-$candidate_version.release-manifest.json"
 
-python3 - "$qualification" "$candidate_sha" "$binary_digest" "$source_digest" "$sbom_digest" "$notices_digest" "$stable_sha256" <<'PY'
+python3 - "$qualification" "$candidate_sha" "$binary_digest" "$source_digest" "$sbom_digest" "$notices_digest" "$stable_version" "$stable_sha256" <<'PY'
 import json,sys
-path,sha,binary_digest,source_digest,sbom_digest,notices_digest,stable_digest=sys.argv[1:]
+path,sha,binary_digest,source_digest,sbom_digest,notices_digest,stable_version,stable_digest=sys.argv[1:]
 data={
   "schema":"control-center.candidate-qualification.0.32.v1",
   "status":"PARTIAL_PASS_NOT_RC",
   "candidate_version":"0.32.0",
   "candidate_sha":sha,
-  "stable_base":{"version":"0.31.0","artifact_digest":"sha256:"+stable_digest},
+  "stable_base":{"version":stable_version,"artifact_digest":"sha256:"+stable_digest},
   "artifacts":{"linux_amd64":binary_digest,"source":source_digest,"sbom":sbom_digest,"third_party_notices":notices_digest},
   "gates":{
     "candidate_artifact_packaging":"PASS",
     "clean_install":"PASS",
-    "upgrade_from_stable_0_31":"PASS",
+    "upgrade_from_stable_0_31_1":"PASS",
     "rollback_forward_recovery":"PASS"
   },
   "commercial_engineering_subgates":{
@@ -205,15 +194,15 @@ PY
 
 qualification_digest="sha256:$(sha256sum "$qualification" | awk '{print $1}')"
 provenance_digest="sha256:$(sha256sum "$provenance" | awk '{print $1}')"
-python3 - "$release_manifest" "$candidate_sha" "$binary_digest" "$sidecar_digest" "$source_digest" "$sbom_digest" "$notices_digest" "$qualification_digest" "$provenance_digest" <<'PY'
+python3 - "$release_manifest" "$candidate_sha" "$binary_digest" "$sidecar_digest" "$source_digest" "$sbom_digest" "$notices_digest" "$qualification_digest" "$provenance_digest" "$stable_version" <<'PY'
 import json,sys
-path,sha,binary_digest,sidecar_digest,source_digest,sbom_digest,notices_digest,qualification_digest,provenance_digest=sys.argv[1:]
+path,sha,binary_digest,sidecar_digest,source_digest,sbom_digest,notices_digest,qualification_digest,provenance_digest,stable_version=sys.argv[1:]
 data={
   "schema":"control-center.candidate-release-manifest.0.32.v1",
   "status":"candidate-only-not-public-stable",
   "version":"0.32.0",
   "revision":sha,
-  "stable_base":"0.31.0",
+  "stable_base":stable_version,
   "publication_authority":False,
   "artifacts":{
     "control-center-0.32.0-linux-amd64.tar.gz":binary_digest,
@@ -289,6 +278,6 @@ echo "CANDIDATE_032_PACKAGE=PASS"
 echo "CANDIDATE_032_SBOM=PASS"
 echo "THIRD_PARTY_NOTICES=PASS"
 echo "CLEAN_INSTALL=PASS"
-echo "UPGRADE_FROM_STABLE_0_31=PASS"
+echo "UPGRADE_FROM_STABLE_0_31_1=PASS"
 echo "ROLLBACK_FORWARD_RECOVERY=PASS"
 echo "CANDIDATE_SHA=$candidate_sha"
