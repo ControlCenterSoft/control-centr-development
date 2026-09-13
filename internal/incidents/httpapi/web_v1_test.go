@@ -52,7 +52,7 @@ func TestIncidentWebListUsesServerActorExactFiltersAndNoStore(t *testing.T) {
 	incident := validIncidentWebFixture()
 	service := &incidentWebServiceStub{page: incidents.ListPage{Items: []incidents.Incident{incident}}}
 	handler := NewWithBrowser(service, fixedActor("user:operator"))
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?status=open&severity=warning&scope_id=site:primary&resource_kind=node&resource_id=node-1&limit=25", nil)
+	request := httptest.NewRequest(http.MethodGet, incidentBrowserPrefix+"?status=open&severity=warning&scope_id=site:primary&resource_kind=node&resource_id=node-1&limit=25", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -83,7 +83,7 @@ func TestIncidentWebDetailRendersBoundedEvidenceWithoutMutationControls(t *testi
 	incident := validIncidentWebFixture()
 	service := &incidentWebServiceStub{incident: incident}
 	handler := NewWithBrowser(service, fixedActor("user:operator"))
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui/incident:inc-1", nil)
+	request := httptest.NewRequest(http.MethodGet, incidentBrowserPrefix+"/incident:inc-1", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -109,10 +109,23 @@ func TestIncidentWebDetailRendersBoundedEvidenceWithoutMutationControls(t *testi
 	}
 }
 
+func TestIncidentWebReservedRouteDoesNotShadowValidIncidentID(t *testing.T) {
+	service := &incidentWebServiceStub{incident: validIncidentWebFixture()}
+	handler := NewWithBrowser(service, fixedActor("user:operator"))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui", nil))
+	if response.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("valid incident ID ui was shadowed by browser route: status=%d content-type=%q body=%s", response.Code, response.Header().Get("Content-Type"), response.Body.String())
+	}
+	if service.getCalls != 1 {
+		t.Fatalf("valid incident ID ui did not reach API get: calls=%d", service.getCalls)
+	}
+}
+
 func TestIncidentWebRejectsInvalidQueryBeforeService(t *testing.T) {
 	service := &incidentWebServiceStub{}
 	handler := NewWithBrowser(service, fixedActor("user:operator"))
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?search=secret", nil)
+	request := httptest.NewRequest(http.MethodGet, incidentBrowserPrefix+"?search=secret", nil)
 	response := httptest.NewRecorder()
 
 	handler.ServeHTTP(response, request)
@@ -128,7 +141,7 @@ func TestIncidentWebFailsClosedOnAccessDeniedAndInvalidStoredEvidence(t *testing
 	service := &incidentWebServiceStub{listErr: incidents.ErrOperatorAccessDenied}
 	handler := NewWithBrowser(service, fixedActor("user:viewer"))
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?scope_id=site:primary", nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, incidentBrowserPrefix+"?scope_id=site:primary", nil))
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("denied status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -138,7 +151,7 @@ func TestIncidentWebFailsClosedOnAccessDeniedAndInvalidStoredEvidence(t *testing
 	service = &incidentWebServiceStub{page: incidents.ListPage{Items: []incidents.Incident{broken}}}
 	handler = NewWithBrowser(service, fixedActor("user:operator"))
 	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui", nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, incidentBrowserPrefix, nil))
 	if response.Code != http.StatusServiceUnavailable || strings.Contains(response.Body.String(), "incident:inc-1") {
 		t.Fatalf("invalid evidence status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -152,7 +165,7 @@ func TestIncidentWebRejectsInconsistentPaginationEvidence(t *testing.T) {
 	}}
 	handler := NewWithBrowser(service, fixedActor("user:operator"))
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?limit=10", nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, incidentBrowserPrefix+"?limit=10", nil))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("missing cursor status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -165,7 +178,7 @@ func TestIncidentWebRejectsInconsistentPaginationEvidence(t *testing.T) {
 	}}
 	handler = NewWithBrowser(service, fixedActor("user:operator"))
 	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?limit=10", nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, incidentBrowserPrefix+"?limit=10", nil))
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("mismatched cursor status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -177,7 +190,7 @@ func TestIncidentWebPaginationPreservesBoundedExactFilters(t *testing.T) {
 	service := &incidentWebServiceStub{page: incidents.ListPage{Items: []incidents.Incident{incident}, HasMore: true, Next: next}}
 	handler := NewWithBrowser(service, fixedActor("user:operator"))
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?status=open&severity=warning&scope_id=site:primary&limit=10", nil))
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, incidentBrowserPrefix+"?status=open&severity=warning&scope_id=site:primary&limit=10", nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
