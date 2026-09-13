@@ -83,9 +83,15 @@ func TestEvaluateProductStable032StillFailsClosedOnTechnicalGate(t *testing.T) {
 
 func TestEvaluate032RejectsWrongStableIdentityOrArtifact(t *testing.T) {
 	snapshot := complete032Snapshot()
-	snapshot.StableVersion = "0.30.0"
+	snapshot.StableVersion = "0.31.0"
 	if _, err := Evaluate032(snapshot); err == nil {
-		t.Fatal("wrong stable version accepted")
+		t.Fatal("superseded stable version accepted")
+	}
+
+	snapshot = complete032Snapshot()
+	snapshot.StableTag = "v0.31.0"
+	if _, err := Evaluate032(snapshot); err == nil {
+		t.Fatal("superseded stable tag accepted")
 	}
 
 	snapshot = complete032Snapshot()
@@ -152,7 +158,7 @@ func TestValidateArtifactManifest032AcceptsExactSet(t *testing.T) {
 	}
 }
 
-func TestValidateArtifactManifest032RejectsMissingAnd031Names(t *testing.T) {
+func TestValidateArtifactManifest032RejectsMissingAndStableNames(t *testing.T) {
 	manifest := complete032ArtifactManifest()
 	manifest.Artifacts = manifest.Artifacts[:len(manifest.Artifacts)-1]
 	if err := ValidateArtifactManifest032(manifest); err == nil {
@@ -160,9 +166,9 @@ func TestValidateArtifactManifest032RejectsMissingAnd031Names(t *testing.T) {
 	}
 
 	manifest = complete032ArtifactManifest()
-	manifest.Artifacts[0].Name = "control-center-0.31.0-linux-amd64.tar.gz"
+	manifest.Artifacts[0].Name = "control-center-0.31.1-linux-amd64.tar.gz"
 	if err := ValidateArtifactManifest032(manifest); err == nil {
-		t.Fatal("0.31 artifact accepted in 0.32 manifest")
+		t.Fatal("Stable artifact accepted in 0.32 manifest")
 	}
 }
 
