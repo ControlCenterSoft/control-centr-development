@@ -155,6 +155,7 @@ func newProductHandler(identity *identityapi.Server, options ...productHandlerOp
 	}
 	if config.healthOverview != nil {
 		mux.Handle("GET /api/v1/ui/health", guard(rbac.PermissionResourcesRead, uiapi.HealthOverviewHandler(config.healthOverview)))
+		mux.Handle("GET /health", webGuard(rbac.PermissionResourcesRead, healthWebHandler(config.healthOverview)))
 	}
 	if config.resourceReports != nil {
 		mux.Handle("GET /api/v1/ui/reports/resources", guard(rbac.PermissionResourcesRead, uiapi.OperationalReportHandler(config.resourceReports)))
