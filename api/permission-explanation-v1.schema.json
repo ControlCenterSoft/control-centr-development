@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://control-center.pro/schemas/permission-explanation-v1.schema.json",
+  "title": "Control Center Permission Explanation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "permission",
+    "target",
+    "allowed",
+    "reason",
+    "matching_roles",
+    "mutation_authorized"
+  ],
+  "properties": {
+    "contract_version": { "const": "ui.permission-explanation/v1" },
+    "permission": { "$ref": "#/$defs/identifier" },
+    "target": { "$ref": "#/$defs/scope" },
+    "allowed": { "type": "boolean" },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "allowed_permission",
+        "allowed_wildcard",
+        "denied_no_effective_grants",
+        "denied_scope_not_granted",
+        "denied_permission_not_granted"
+      ]
+    },
+    "matching_roles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "mutation_authorized": { "const": false }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "scope": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "global" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "enum": ["tenant", "site", "resource"] },
+            "id": { "$ref": "#/$defs/identifier" }
+          }
+        }
+      ]
+    }
+  }
+}
