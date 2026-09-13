@@ -2,7 +2,7 @@
 
 Статус: **PREPARED / НЕ RELEASE CANDIDATE / НЕ PUBLIC STABLE**.
 
-Control Center 0.32.0 — следующий release train после официального Public Stable 0.31.0. Документ фиксирует целевую release boundary и не является заявлением о завершённой qualification.
+Control Center 0.32.0 — следующий release train после текущего официального Public Stable 0.31.1. Документ фиксирует целевую release boundary и не является заявлением о завершённой qualification.
 
 ## Пользовательский результат
 
@@ -34,12 +34,13 @@ Unknown, stale, expired, unavailable, malformed или противоречив�
 
 ## Persistent state и upgrade
 
-0.32 добавляет только additive schema для собственного durable state. Все migration-файлы, опубликованные в Public Stable 0.31.0, являются immutable byte-for-byte.
+0.32 добавляет только additive schema для собственного durable state. Все migration-файлы, опубликованные в Public Stable 0.31.1 (`0001`–`0012`), являются immutable byte-for-byte. Corrective patch 0.31.1 не расширяет feature/schema scope 0.31, но является единственной canonical Stable base нового release evidence.
 
 Поддерживаемый release path обязан доказать:
 
 - clean install 0.32 exact candidate;
-- upgrade с официального 0.31.0;
+- upgrade с официального `v0.31.1` Linux artifact, привязанного к SHA-256 `b9d6467c7c95a6e7e8597398c1b6e7327d319058d248e9cd0416c5baf9699c97`;
+- использование штатного `scripts/migrate.sh`, входящего в 0.31.1 package, без исторического workaround 0.31.0;
 - сохранение установленного пользователем admin password и first-login state;
 - сохранение существующих Change / Job / timeline и другого опубликованного durable state;
 - применение 0.32 migration ровно один раз и replay-idempotency;
@@ -60,7 +61,7 @@ Unknown, stale, expired, unavailable, malformed или противоречив�
 - release manifest;
 - `SHA256SUMS`.
 
-Dependency/license inventory привязывается к версии 0.32 отдельно, даже если набор runtime dependencies не изменился относительно 0.31.
+Dependency/license inventory привязывается к версии 0.32 отдельно, даже если набор runtime dependencies не изменился относительно 0.31. Stable 0.31.1 artifact используется только как exact upgrade/rollback base и не становится частью candidate artifact identity.
 
 ## Текущая development boundary
 
@@ -70,7 +71,7 @@ Canonical main уже содержит значительную часть miles
 
 ## Product Stable и commercial launch
 
-Product Public Stable определяется технической готовностью: scope integration, packaging, clean install, supported upgrade, rollback/forward recovery, PostgreSQL restart/reconnect, security/privacy и release metadata.
+Product Public Stable определяется технической готовностью: scope integration, packaging, clean install, supported upgrade с exact current Stable, rollback/forward recovery, PostgreSQL restart/reconnect, security/privacy и release metadata.
 
 Commercial/legal clearance ведётся отдельным track. Пока он не закрыт, продукт и публичные материалы не должны заявлять неподтверждённые договорные, лицензионные, support или иные юридические гарантии. Это не преобразует отсутствующее legal evidence в PASS.
 
@@ -81,7 +82,8 @@ Commercial/legal clearance ведётся отдельным track. Пока о�
 - false Success или улучшение stale/unknown evidence до Healthy;
 - нарушение RBAC/first-login/session boundary;
 - cross-resource evidence leakage;
-- migration drift относительно опубликованного 0.31;
+- migration drift относительно опубликованной 0.31.1 base;
+- release evidence привязан к superseded `v0.31.0` либо к неподтверждённому Stable artifact digest;
 - upgrade теряет данные, настройки или пользовательский пароль;
 - rollback/forward recovery не подтверждён;
 - exact candidate SHA не прошёл обязательные technical gates;
