@@ -37,6 +37,11 @@ func loginWithPassword(t *testing.T, server *Server, username, password string) 
 	return cookies[0]
 }
 
+func setSameOriginFormHeaders(request *http.Request) {
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", "http://"+request.Host)
+}
+
 func TestSessionSecurityWorkspaceAPIIsSelfOnlyAndCredentialFree(t *testing.T) {
 	fixture := newSessionSecurityHTTPFixture(t)
 
@@ -89,6 +94,31 @@ func TestSessionSecurityBrowserRequiresCompletedFirstLogin(t *testing.T) {
 	}
 }
 
+func TestSessionSecurityBrowserRejectsCrossOriginOrQuerySelectedMutation(t *testing.T) {
+	fixture := newSessionSecurityHTTPFixture(t)
+	cookie := fixture.login(t, "viewer")
+	form := url.Values{"session_id": {strings.Repeat("a", 32)}}
+
+	crossOrigin := httptest.NewRequest(http.MethodPost, "/web/security/sessions/revoke", strings.NewReader(form.Encode()))
+	crossOrigin.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	crossOrigin.Header.Set("Origin", "https://attacker.invalid")
+	crossOrigin.AddCookie(cookie)
+	crossOriginResult := httptest.NewRecorder()
+	fixture.server.ServeHTTP(crossOriginResult, crossOrigin)
+	if crossOriginResult.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin revoke status=%d", crossOriginResult.Code)
+	}
+
+	querySelected := httptest.NewRequest(http.MethodPost, "/web/security/sessions/revoke?session_id="+strings.Repeat("b", 32), strings.NewReader(form.Encode()))
+	setSameOriginFormHeaders(querySelected)
+	querySelected.AddCookie(cookie)
+	querySelectedResult := httptest.NewRecorder()
+	fixture.server.ServeHTTP(querySelectedResult, querySelected)
+	if querySelectedResult.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("query-selected revoke status=%d", querySelectedResult.Code)
+	}
+}
+
 func TestSessionSecurityBrowserRevokesOnlyOwnedSessionAndPreservesCurrent(t *testing.T) {
 	fixture := newSessionSecurityHTTPFixture(t)
 	older := fixture.login(t, "viewer")
@@ -124,7 +154,7 @@ func TestSessionSecurityBrowserRevokesOnlyOwnedSessionAndPreservesCurrent(t *tes
 
 	form := url.Values{"session_id": {olderID}}
 	revokeRequest := httptest.NewRequest(http.MethodPost, "/web/security/sessions/revoke", strings.NewReader(form.Encode()))
-	revokeRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setSameOriginFormHeaders(revokeRequest)
 	revokeRequest.AddCookie(current)
 	revokeResult := httptest.NewRecorder()
 	fixture.server.ServeHTTP(revokeResult, revokeRequest)
@@ -179,7 +209,7 @@ func TestSessionSecurityCurrentRevokeClearsCookieAndRequiresLogin(t *testing.T) 
 
 	form := url.Values{"session_id": {currentID}}
 	revokeRequest := httptest.NewRequest(http.MethodPost, "/web/security/sessions/revoke", strings.NewReader(form.Encode()))
-	revokeRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setSameOriginFormHeaders(revokeRequest)
 	revokeRequest.AddCookie(cookie)
 	revokeResult := httptest.NewRecorder()
 	fixture.server.ServeHTTP(revokeResult, revokeRequest)
