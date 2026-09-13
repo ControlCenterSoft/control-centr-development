@@ -21,6 +21,7 @@ import (
 	incidenthttpapi "control-center/internal/incidents/httpapi"
 	"control-center/internal/persistence/postgres"
 	"control-center/internal/resources"
+	productui "control-center/internal/ui"
 )
 
 func main() {
@@ -75,12 +76,21 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize orchestration: %w", err)
 	}
-	product := newProductHandler(identity, withChangesJobsProvider(orchestration))
 
 	incidentRepository, err := postgres.NewIncidentReadRepository(db)
 	if err != nil {
 		return fmt.Errorf("initialize incident repository: %w", err)
 	}
+	incidentReports, err := productui.NewIncidentOperationalReportProvider(incidentRepository, time.Now)
+	if err != nil {
+		return fmt.Errorf("initialize resource reports: %w", err)
+	}
+	product := newProductHandler(
+		identity,
+		withChangesJobsProvider(orchestration),
+		withResourceReportsProvider(incidentReports),
+	)
+
 	authorizationChecker, ok := identity.AuthorizationChecker()
 	if !ok {
 		return errors.New("initialize incidents: authorization checker unavailable")
