@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"control-center/internal/incidents"
@@ -150,11 +149,21 @@ func buildIncidentWebURL(query incidents.ListQuery, cursor *incidents.ListCursor
 	for _, severity := range query.Severities {
 		values.Add("severity", string(severity))
 	}
-	if query.ScopeID != "" { values.Set("scope_id", query.ScopeID) }
-	if query.ResourceKind != "" { values.Set("resource_kind", query.ResourceKind) }
-	if query.ResourceID != "" { values.Set("resource_id", query.ResourceID) }
-	if query.StartedFrom != nil { values.Set("started_from", query.StartedFrom.UTC().Format(time.RFC3339)) }
-	if query.StartedBefore != nil { values.Set("started_before", query.StartedBefore.UTC().Format(time.RFC3339)) }
+	if query.ScopeID != "" {
+		values.Set("scope_id", query.ScopeID)
+	}
+	if query.ResourceKind != "" {
+		values.Set("resource_kind", query.ResourceKind)
+	}
+	if query.ResourceID != "" {
+		values.Set("resource_id", query.ResourceID)
+	}
+	if query.StartedFrom != nil {
+		values.Set("started_from", query.StartedFrom.UTC().Format(time.RFC3339))
+	}
+	if query.StartedBefore != nil {
+		values.Set("started_before", query.StartedBefore.UTC().Format(time.RFC3339))
+	}
 	if cursor != nil {
 		values.Set("before_started_at", cursor.StartedAt.UTC().Format(time.RFC3339))
 		values.Set("before_object_id", cursor.ObjectID)
@@ -195,11 +204,8 @@ func writeIncidentWebError(w http.ResponseWriter, err error) {
 }
 
 func incidentWebTime(value time.Time) string {
-	if value.IsZero() { return "—" }
+	if value.IsZero() {
+		return "—"
+	}
 	return value.UTC().Format(time.RFC3339)
-}
-
-func firstIncidentWebValue(values []string) string {
-	if len(values) == 0 { return "" }
-	return strings.TrimSpace(values[0])
 }
