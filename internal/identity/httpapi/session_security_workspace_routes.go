@@ -4,6 +4,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -117,12 +118,20 @@ func (s *Server) webRevokeSession(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
+	if !sameOriginBrowserMutation(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	if r.URL.RawQuery != "" || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "application/x-www-form-urlencoded") {
+		http.Error(w, "Invalid request", http.StatusUnsupportedMediaType)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
-	sessionID := strings.TrimSpace(r.FormValue("session_id"))
+	sessionID := strings.TrimSpace(r.PostFormValue("session_id"))
 	if sessionID == "" || len(sessionID) > 128 || strings.ContainsAny(sessionID, "\r\n\x00") {
 		http.Error(w, "Invalid session", http.StatusBadRequest)
 		return
@@ -159,6 +168,14 @@ func (s *Server) webRevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
+	if !sameOriginBrowserMutation(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	if r.URL.RawQuery != "" || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "application/x-www-form-urlencoded") {
+		http.Error(w, "Invalid request", http.StatusUnsupportedMediaType)
+		return
+	}
 	if _, err := s.auth.RevokeAllSessions(r.Context(), auth.RevokeAllSessionsInput{
 		UserID: principal.Identity.ID, SourceIP: remoteIP(r),
 	}); err != nil {
@@ -172,4 +189,22 @@ func (s *Server) webRevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	s.clearSessionCookie(w)
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func sameOriginBrowserMutation(r *http.Request) bool {
+	if r == nil || r.Method != http.MethodPost {
+		return false
+	}
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return false
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	if parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return false
+	}
+	return parsed.Host != "" && strings.EqualFold(parsed.Host, r.Host)
 }
