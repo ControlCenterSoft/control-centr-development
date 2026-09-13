@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   qualify:
-    name: 0.32 exact candidate / Stable 0.31 upgrade / readiness
+    name: 0.32 exact candidate / Stable 0.31.1 upgrade / readiness
     runs-on: ubuntu-latest
     timeout-minutes: 35
     services:
@@ -104,7 +104,7 @@ jobs:
             --candidate-sha "$CANDIDATE_SHA" \
             --output dist/release-032/control-center-0.32.0.scope-evidence.json
 
-      - name: Qualify packaging and Stable 0.31 lifecycle
+      - name: Qualify packaging and Stable 0.31.1 lifecycle
         shell: bash
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
