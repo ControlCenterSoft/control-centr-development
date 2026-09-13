@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -97,11 +98,9 @@ func (s *server) handleWebList(w http.ResponseWriter, r *http.Request) {
 		writeIncidentWebError(w, err)
 		return
 	}
-	for index := range page.Items {
-		if err := page.Items[index].Validate(); err != nil {
-			http.Error(w, "Incident evidence unavailable", http.StatusServiceUnavailable)
-			return
-		}
+	if err := validateIncidentWebPage(page, query); err != nil {
+		http.Error(w, "Incident evidence unavailable", http.StatusServiceUnavailable)
+		return
 	}
 	data := incidentWebListData{
 		Items: page.Items, Limit: query.Limit, ScopeID: query.ScopeID,
@@ -138,6 +137,36 @@ func (s *server) handleWebGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeIncidentHTML(w, incidentDetailTemplate, incidentWebDetailData{Incident: incident})
+}
+
+func validateIncidentWebPage(page incidents.ListPage, query incidents.ListQuery) error {
+	if len(page.Items) > query.Limit {
+		return fmt.Errorf("incident page exceeds requested limit")
+	}
+	if page.HasMore != (page.Next != nil) {
+		return fmt.Errorf("incident pagination evidence is inconsistent")
+	}
+	for index := range page.Items {
+		if err := page.Items[index].Validate(); err != nil {
+			return fmt.Errorf("invalid incident item %d: %w", index, err)
+		}
+	}
+	if !page.HasMore {
+		return nil
+	}
+	if len(page.Items) == 0 {
+		return fmt.Errorf("incident pagination cannot continue after an empty page")
+	}
+	last := page.Items[len(page.Items)-1]
+	if !page.Next.StartedAt.Equal(last.StartedAt) || page.Next.ObjectID != last.ObjectID {
+		return fmt.Errorf("incident pagination cursor does not bind the last item")
+	}
+	cursorQuery := query
+	cursorQuery.Before = page.Next
+	if _, err := incidents.NormalizeListQuery(cursorQuery); err != nil {
+		return fmt.Errorf("invalid incident pagination cursor: %w", err)
+	}
+	return nil
 }
 
 func buildIncidentWebURL(query incidents.ListQuery, cursor *incidents.ListCursor) string {
