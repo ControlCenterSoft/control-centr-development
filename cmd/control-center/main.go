@@ -173,7 +173,7 @@ func (h splitHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(path, "/api/v1/auth/") ||
 		strings.HasPrefix(path, "/api/v1/identity/") ||
 		path == "/api/v1/system/overview" ||
-		path == "/login" || path == "/overview" ||
+		path == "/login" || path == "/overview" || path == "/audit" ||
 		strings.HasPrefix(path, "/web/") {
 		h.identity.ServeHTTP(w, r)
 		return
