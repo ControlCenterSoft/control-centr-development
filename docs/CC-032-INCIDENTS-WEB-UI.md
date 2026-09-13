@@ -6,11 +6,12 @@ Status: bounded read-only UI qualification slice for the committed 0.32 `Health 
 
 This slice exposes the already-qualified Incident read model to an authenticated operator browser surface without creating a parallel authorization or mutation path.
 
-- `GET /api/v1/incidents/ui` renders a bounded incident list using the same exact `ListQuery` semantics as the JSON API.
-- `GET /api/v1/incidents/ui/{incidentID}` renders the exact authorized incident with affected resources, signals, runbook reference, incident evidence references and timeline.
-- pagination reuses the canonical keyset cursor (`before_started_at` + `before_object_id`) and preserves the exact bounded filters;
+- `GET /api/v1/incidents/_ui` renders a bounded incident list using the same exact `ListQuery` semantics as the JSON API.
+- `GET /api/v1/incidents/_ui/{incidentID}` renders the exact authorized incident with affected resources, signals, runbook reference, incident evidence references and timeline.
+- `_ui` is deliberately reserved because canonical Control Center Object IDs must start and end with an alphanumeric character; therefore the browser route cannot shadow a valid Incident ObjectID such as `ui`.
+- pagination reuses the canonical keyset cursor (`before_started_at` + `before_object_id`), must bind exactly to the last rendered item, and preserves the exact bounded filters;
 - malformed query input is rejected before the operator service is called;
-- malformed persisted Incident evidence fails closed with `503` rather than being hidden or rendered as a healthy/empty result;
+- malformed persisted Incident evidence or inconsistent pagination evidence fails closed with `503` rather than being hidden or rendered as a healthy/empty result;
 - the existing JSON API remains unchanged.
 
 ## Authorization and security boundary
