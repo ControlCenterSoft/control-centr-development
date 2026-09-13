@@ -19,6 +19,16 @@ func TestAuditWebIsPermissionBoundPrivacyMinimizedAndAudited(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	var sourceHash string
+	for _, event := range fixture.log.Records() {
+		if event.Action == "security.web-test" {
+			sourceHash = event.Hash
+			break
+		}
+	}
+	if sourceHash == "" {
+		t.Fatal("source Audit hash was not persisted")
+	}
 
 	result := fixture.get(t, cookie, "/web/audit?action=security.web-test&limit=25")
 	if result.Code != http.StatusOK {
@@ -31,12 +41,12 @@ func TestAuditWebIsPermissionBoundPrivacyMinimizedAndAudited(t *testing.T) {
 		t.Fatalf("cache-control=%q", result.Header().Get("Cache-Control"))
 	}
 	body := result.Body.String()
-	for _, expected := range []string{"security.web-test", "failed", "actor-1", "node-1", "corr-1", "/api/v1/audit/events/export?"} {
+	for _, expected := range []string{"security.web-test", "failed", "actor-1", "node-1", "/api/v1/audit/events/export?"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("audit web body missing %q: %s", expected, body)
 		}
 	}
-	for _, forbidden := range []string{"203.0.113.88", "top-secret", "private-detail"} {
+	for _, forbidden := range []string{"203.0.113.88", "top-secret", "private-detail", "corr-1", sourceHash} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("audit web body leaked %q: %s", forbidden, body)
 		}
@@ -44,12 +54,12 @@ func TestAuditWebIsPermissionBoundPrivacyMinimizedAndAudited(t *testing.T) {
 
 	foundEvidence := false
 	for _, event := range fixture.log.Records() {
-		if event.Action == "audit.events_web" && event.Outcome == "success" && event.ActorID == "auditor-1" {
+		if event.Action == "audit.events_list" && event.Outcome == "success" && event.ActorID == "auditor-1" && event.Details["surface"] == "web" {
 			foundEvidence = true
 		}
 	}
 	if !foundEvidence {
-		t.Fatal("successful Audit web read did not create audit evidence")
+		t.Fatal("successful Audit web read did not create web-surface audit evidence")
 	}
 }
 
@@ -73,7 +83,7 @@ func TestAuditWebRejectsAmbiguousQuery(t *testing.T) {
 	fixture := newAuditEventsFixture(t)
 	cookie := fixture.login(t, "auditor", "a secure test password")
 	result := fixture.get(t, cookie, "/web/audit?limit=25&limit=50")
-	if result.Code != http.StatusBadRequest || !strings.Contains(result.Body.String(), "Некорректные фильтры Audit") {
+	if result.Code != http.StatusBadRequest || !strings.Contains(result.Body.String(), "Invalid audit query") {
 		t.Fatalf("status=%d body=%s", result.Code, result.Body.String())
 	}
 }
