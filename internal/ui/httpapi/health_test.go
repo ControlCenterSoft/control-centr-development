@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,8 +62,10 @@ func TestHealthOverviewHandlerSourceFailureIsExplicitUnavailable(t *testing.T) {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
 	}
 	body := response.Body.String()
-	if !containsAll(body, `"data_state":"unavailable"`, `"overall_state":"unknown"`, `"mutation_authorized":false`) {
-		t.Fatalf("unexpected unavailable body: %s", body)
+	for _, expected := range []string{`"data_state":"unavailable"`, `"overall_state":"unknown"`, `"mutation_authorized":false`} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("unavailable body missing %q: %s", expected, body)
+		}
 	}
 }
 
@@ -89,8 +92,11 @@ func TestHealthOverviewHandlerRejectsTamperedProviderView(t *testing.T) {
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusServiceUnavailable, response.Body.String())
 	}
-	if !containsAll(response.Body.String(), `"data_state":"unavailable"`, `"overall_state":"unknown"`) {
-		t.Fatalf("tampered view did not fail closed: %s", response.Body.String())
+	body := response.Body.String()
+	for _, expected := range []string{`"data_state":"unavailable"`, `"overall_state":"unknown"`} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("tampered view fail-closed body missing %q: %s", expected, body)
+		}
 	}
 }
 
@@ -111,25 +117,4 @@ func TestHealthOverviewHandlerIsGetOnly(t *testing.T) {
 	if got := response.Header().Get("Allow"); got != http.MethodGet {
 		t.Fatalf("Allow = %q, want GET", got)
 	}
-}
-
-func containsAll(value string, needles ...string) bool {
-	for _, needle := range needles {
-		if len(needle) == 0 || !contains(value, needle) {
-			return false
-		}
-	}
-	return true
-}
-
-func contains(value, needle string) bool {
-	if len(needle) > len(value) {
-		return false
-	}
-	for index := 0; index+len(needle) <= len(value); index++ {
-		if value[index:index+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
 }
