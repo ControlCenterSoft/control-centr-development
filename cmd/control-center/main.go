@@ -216,6 +216,7 @@ func (h splitHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.HasPrefix(path, "/api/v1/agent/nodes/") ||
 		path == "/api/v1/ui/infrastructure" ||
 		path == "/api/v1/ui/changes-jobs" ||
+		path == "/api/v1/ui/health" ||
 		strings.HasPrefix(path, "/api/v1/ui/reports/") ||
 		strings.HasPrefix(path, "/reports/") ||
 		path == "/infrastructure" ||
