@@ -4,9 +4,9 @@ import "fmt"
 
 const (
 	Schema032V1             = "control-center.release-candidate-readiness.0.32.v1"
-	Stable032BaseVersion    = "0.31.0"
-	Stable032BaseTag        = "v0.31.0"
-	Stable032ArtifactDigest = "sha256:0b270edcf1d17bd6a38fa3f77b78c4112d43fb945582ee2d25cd91daf38cf06c"
+	Stable032BaseVersion    = "0.31.1"
+	Stable032BaseTag        = "v0.31.1"
+	Stable032ArtifactDigest = "sha256:b9d6467c7c95a6e7e8597398c1b6e7327d319058d248e9cd0416c5baf9699c97"
 	Candidate032Version     = "0.32.0"
 
 	ArtifactManifestSchema032V1 = "control-center.release-candidate-artifacts.0.32.v1"
@@ -14,14 +14,14 @@ const (
 
 const (
 	GateHealthIncidentsAuditReports GateID = "health_incidents_audit_reports_integration"
-	GateUpgradeFromStable031        GateID = "upgrade_from_stable_0_31"
+	GateUpgradeFromStable0311       GateID = "upgrade_from_stable_0_31_1"
 )
 
 var release032RequiredGates = [...]GateID{
 	GateHealthIncidentsAuditReports,
 	GatePackaging,
 	GateCleanInstall,
-	GateUpgradeFromStable031,
+	GateUpgradeFromStable0311,
 	GateRollbackRecovery,
 	GatePostgresRestart,
 	GateSecurityPrivacy,
@@ -36,7 +36,7 @@ var release032ProductStableRequiredGates = [...]GateID{
 	GateHealthIncidentsAuditReports,
 	GatePackaging,
 	GateCleanInstall,
-	GateUpgradeFromStable031,
+	GateUpgradeFromStable0311,
 	GateRollbackRecovery,
 	GatePostgresRestart,
 	GateSecurityPrivacy,
