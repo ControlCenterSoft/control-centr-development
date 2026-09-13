@@ -115,18 +115,6 @@ components:
       minLength: 1
       maxLength: 128
       pattern: '^[a-z0-9](?:[a-z0-9._:-]{0,126}[a-z0-9])?$'
-    ObjectMetadata:
-      type: object
-      additionalProperties: false
-      required: [object_id, scope_id, owner_scope, generation, resource_version, created_at, updated_at]
-      properties:
-        object_id: { $ref: '#/components/schemas/ObjectIdentifier' }
-        scope_id: { $ref: '#/components/schemas/ObjectIdentifier' }
-        owner_scope: { $ref: '#/components/schemas/ObjectIdentifier' }
-        generation: { type: integer, minimum: 1 }
-        resource_version: { type: string, minLength: 1, maxLength: 255, pattern: '^\S+$' }
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
     ManagementLevel:
       type: string
       enum: [observed, connected, managed]
@@ -205,28 +193,40 @@ components:
           items: { $ref: '#/components/schemas/CapabilitySpec' }
         qualification_status: { $ref: '#/components/schemas/QualificationStatus' }
     ProviderBinding:
-      allOf:
-        - $ref: '#/components/schemas/ObjectMetadata'
-        - type: object
-          additionalProperties: false
-          required:
-            - provider_id
-            - provider_version
-            - contract_version
-            - product_family
-            - product_version
-            - management_level
-            - target_ref
-            - health
-          properties:
-            provider_id: { $ref: '#/components/schemas/ProviderIdentifier' }
-            provider_version: { type: string, minLength: 1, maxLength: 64 }
-            contract_version: { type: string, minLength: 1, maxLength: 64 }
-            product_family: { type: string, minLength: 1, maxLength: 160 }
-            product_version: { type: string, minLength: 1, maxLength: 128 }
-            management_level: { $ref: '#/components/schemas/ManagementLevel' }
-            target_ref: { type: string, minLength: 1, maxLength: 255 }
-            health: { $ref: '#/components/schemas/BindingHealth' }
+      type: object
+      additionalProperties: false
+      required:
+        - object_id
+        - scope_id
+        - owner_scope
+        - generation
+        - resource_version
+        - created_at
+        - updated_at
+        - provider_id
+        - provider_version
+        - contract_version
+        - product_family
+        - product_version
+        - management_level
+        - target_ref
+        - health
+      properties:
+        object_id: { $ref: '#/components/schemas/ObjectIdentifier' }
+        scope_id: { $ref: '#/components/schemas/ObjectIdentifier' }
+        owner_scope: { $ref: '#/components/schemas/ObjectIdentifier' }
+        generation: { type: integer, minimum: 1 }
+        resource_version: { type: string, minLength: 1, maxLength: 255, pattern: '^\S+$' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        provider_id: { $ref: '#/components/schemas/ProviderIdentifier' }
+        provider_version: { type: string, minLength: 1, maxLength: 64 }
+        contract_version: { type: string, minLength: 1, maxLength: 64 }
+        product_family: { type: string, minLength: 1, maxLength: 160 }
+        product_version: { type: string, minLength: 1, maxLength: 128 }
+        management_level: { $ref: '#/components/schemas/ManagementLevel' }
+        target_ref: { type: string, minLength: 1, maxLength: 255 }
+        health: { $ref: '#/components/schemas/BindingHealth' }
     ErrorEnvelope:
       type: object
       additionalProperties: false
