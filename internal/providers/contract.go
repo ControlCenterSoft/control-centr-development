@@ -221,14 +221,14 @@ func (h BindingHealth) Valid() bool {
 // discovered/adopted/managed product instance.
 type Binding struct {
 	corecontracts.ObjectMetadata
-	ProviderID       string          `json:"provider_id"`
-	ProviderVersion  string          `json:"provider_version"`
-	ContractVersion  string          `json:"contract_version"`
-	ProductFamily    string          `json:"product_family"`
-	ProductVersion   string          `json:"product_version"`
+	ProviderID      string          `json:"provider_id"`
+	ProviderVersion string          `json:"provider_version"`
+	ContractVersion string          `json:"contract_version"`
+	ProductFamily   string          `json:"product_family"`
+	ProductVersion  string          `json:"product_version"`
 	ManagementLevel ManagementLevel `json:"management_level"`
-	TargetRef        string          `json:"target_ref"`
-	Health           BindingHealth   `json:"health"`
+	TargetRef       string          `json:"target_ref"`
+	Health          BindingHealth   `json:"health"`
 }
 
 func (b Binding) Validate() error {
