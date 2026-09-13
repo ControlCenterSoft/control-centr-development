@@ -77,22 +77,26 @@ func (q QualificationStatus) Valid() bool {
 // RequiredSecretRefs and Locks are declarations consumed by higher-level policy
 // and execution layers; they never authorize an operation by themselves.
 type CapabilitySpec struct {
-	ID                  string    `json:"id"`
-	Mutation            bool      `json:"mutation"`
-	RiskClass           RiskClass `json:"risk_class"`
-	RequiredPermissions []string  `json:"required_permissions,omitempty"`
-	RequiredSecretRefs  []string  `json:"required_secret_refs,omitempty"`
-	Preconditions       []string  `json:"preconditions,omitempty"`
-	Locks               []string  `json:"locks,omitempty"`
-	Idempotency         string    `json:"idempotency"`
-	Verification        []string  `json:"verification,omitempty"`
-	FailureModel        string    `json:"failure_model,omitempty"`
-	Rollback            string    `json:"rollback,omitempty"`
-	Recovery            string    `json:"recovery,omitempty"`
+	ID                  string            `json:"id"`
+	ManagementLevels    []ManagementLevel `json:"management_levels"`
+	Mutation            bool              `json:"mutation"`
+	RiskClass           RiskClass         `json:"risk_class"`
+	RequiredPermissions []string          `json:"required_permissions,omitempty"`
+	RequiredSecretRefs  []string          `json:"required_secret_refs,omitempty"`
+	Preconditions       []string          `json:"preconditions,omitempty"`
+	Locks               []string          `json:"locks,omitempty"`
+	Idempotency         string            `json:"idempotency"`
+	Verification        []string          `json:"verification,omitempty"`
+	FailureModel        string            `json:"failure_model,omitempty"`
+	Rollback            string            `json:"rollback,omitempty"`
+	Recovery            string            `json:"recovery,omitempty"`
 }
 
 func (c CapabilitySpec) Validate() error {
 	if err := validateID("capability id", c.ID); err != nil {
+		return err
+	}
+	if err := validateManagementLevels(c.ManagementLevels); err != nil {
 		return err
 	}
 	if !c.RiskClass.Valid() {
@@ -103,6 +107,13 @@ func (c CapabilitySpec) Validate() error {
 	}
 	if c.Mutation && c.RiskClass == RiskReadOnly {
 		return errors.New("mutation capability cannot use read_only risk class")
+	}
+	if c.Mutation {
+		for _, level := range c.ManagementLevels {
+			if level == ManagementObserved {
+				return errors.New("observed management level cannot expose a mutation capability")
+			}
+		}
 	}
 	if strings.TrimSpace(c.Idempotency) == "" {
 		return errors.New("idempotency contract is required")
@@ -148,17 +159,11 @@ func (m Manifest) Validate() error {
 	if len(m.SupportedProductVersions) == 0 {
 		return fmt.Errorf("%w: at least one supported product version is required", ErrInvalidManifest)
 	}
-	if len(m.ManagementLevels) == 0 {
-		return fmt.Errorf("%w: at least one management level is required", ErrInvalidManifest)
+	if err := validateManagementLevels(m.ManagementLevels); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidManifest, err)
 	}
-	seenLevels := map[ManagementLevel]struct{}{}
+	seenLevels := make(map[ManagementLevel]struct{}, len(m.ManagementLevels))
 	for _, level := range m.ManagementLevels {
-		if !level.Valid() {
-			return fmt.Errorf("%w: management level %q is unsupported", ErrInvalidManifest, level)
-		}
-		if _, duplicate := seenLevels[level]; duplicate {
-			return fmt.Errorf("%w: duplicate management level %q", ErrInvalidManifest, level)
-		}
 		seenLevels[level] = struct{}{}
 	}
 	if !m.QualificationStatus.Valid() {
@@ -172,6 +177,11 @@ func (m Manifest) Validate() error {
 		if _, duplicate := seenCapabilities[capability.ID]; duplicate {
 			return fmt.Errorf("%w: duplicate capability %q", ErrInvalidManifest, capability.ID)
 		}
+		for _, level := range capability.ManagementLevels {
+			if _, declared := seenLevels[level]; !declared {
+				return fmt.Errorf("%w: capability %q references undeclared management level %q", ErrInvalidManifest, capability.ID, level)
+			}
+		}
 		seenCapabilities[capability.ID] = struct{}{}
 	}
 	return nil
@@ -181,20 +191,26 @@ func (m Manifest) Supports(capabilityID string, level ManagementLevel) bool {
 	if !level.Valid() {
 		return false
 	}
-	levelSupported := false
+	manifestLevelSupported := false
 	for _, candidate := range m.ManagementLevels {
 		if candidate == level {
-			levelSupported = true
+			manifestLevelSupported = true
 			break
 		}
 	}
-	if !levelSupported {
+	if !manifestLevelSupported {
 		return false
 	}
 	for _, capability := range m.Capabilities {
-		if capability.ID == capabilityID {
-			return true
+		if capability.ID != capabilityID {
+			continue
 		}
+		for _, capabilityLevel := range capability.ManagementLevels {
+			if capabilityLevel == level {
+				return true
+			}
+		}
+		return false
 	}
 	return false
 }
@@ -273,6 +289,23 @@ func validateUniqueIDs(field string, values []string) error {
 			return fmt.Errorf("duplicate %s %q", field, value)
 		}
 		seen[value] = struct{}{}
+	}
+	return nil
+}
+
+func validateManagementLevels(levels []ManagementLevel) error {
+	if len(levels) == 0 {
+		return errors.New("at least one management level is required")
+	}
+	seen := make(map[ManagementLevel]struct{}, len(levels))
+	for _, level := range levels {
+		if !level.Valid() {
+			return fmt.Errorf("management level %q is unsupported", level)
+		}
+		if _, duplicate := seen[level]; duplicate {
+			return fmt.Errorf("duplicate management level %q", level)
+		}
+		seen[level] = struct{}{}
 	}
 	return nil
 }
