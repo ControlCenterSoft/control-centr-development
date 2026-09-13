@@ -144,6 +144,33 @@ func TestIncidentWebFailsClosedOnAccessDeniedAndInvalidStoredEvidence(t *testing
 	}
 }
 
+func TestIncidentWebRejectsInconsistentPaginationEvidence(t *testing.T) {
+	incident := validIncidentWebFixture()
+	service := &incidentWebServiceStub{page: incidents.ListPage{
+		Items:   []incidents.Incident{incident},
+		HasMore: true,
+	}}
+	handler := NewWithBrowser(service, fixedActor("user:operator"))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?limit=10", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing cursor status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	wrong := &incidents.ListCursor{StartedAt: incident.StartedAt.Add(-time.Hour), ObjectID: "incident:other"}
+	service = &incidentWebServiceStub{page: incidents.ListPage{
+		Items:   []incidents.Incident{incident},
+		HasMore: true,
+		Next:    wrong,
+	}}
+	handler = NewWithBrowser(service, fixedActor("user:operator"))
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/incidents/ui?limit=10", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("mismatched cursor status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestIncidentWebPaginationPreservesBoundedExactFilters(t *testing.T) {
 	incident := validIncidentWebFixture()
 	next := &incidents.ListCursor{StartedAt: incident.StartedAt, ObjectID: incident.ObjectID}
@@ -196,7 +223,7 @@ func validIncidentWebFixture() incidents.Incident {
 			{Kind: incidents.TimelineOpened, At: started},
 			{Kind: incidents.TimelineSignalObserved, At: observed, Summary: "Зафиксирован сигнал потери freshness", Evidence: []incidents.EvidenceRef{evidence}},
 		},
-		Runbook: &incidents.RunbookRef{ID: "runbook:network-verification", Revision: "v1"},
+		Runbook:  &incidents.RunbookRef{ID: "runbook:network-verification", Revision: "v1"},
 		Evidence: []incidents.EvidenceRef{evidence},
 	}
 }
