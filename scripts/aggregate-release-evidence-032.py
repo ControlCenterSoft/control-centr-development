@@ -7,9 +7,9 @@ import json
 import re
 from pathlib import Path
 
-STABLE_VERSION = "0.31.0"
-STABLE_TAG = "v0.31.0"
-STABLE_ARTIFACT_DIGEST = "sha256:0b270edcf1d17bd6a38fa3f77b78c4112d43fb945582ee2d25cd91daf38cf06c"
+STABLE_VERSION = "0.31.1"
+STABLE_TAG = "v0.31.1"
+STABLE_ARTIFACT_DIGEST = "sha256:b9d6467c7c95a6e7e8597398c1b6e7327d319058d248e9cd0416c5baf9699c97"
 CANDIDATE_VERSION = "0.32.0"
 SCHEMA = "control-center.release-candidate-readiness.0.32.v1"
 SCOPE_SCHEMA = "control-center.release-scope-0.32.v1"
@@ -159,6 +159,11 @@ def main() -> int:
 
     if qualification.get("candidate_version") != CANDIDATE_VERSION or qualification.get("candidate_sha") != candidate_sha:
         raise ValueError("qualification identity mismatch")
+    stable_base = qualification.get("stable_base")
+    if not isinstance(stable_base, dict):
+        raise ValueError("qualification Stable base missing")
+    if stable_base.get("version") != STABLE_VERSION or stable_base.get("artifact_digest") != STABLE_ARTIFACT_DIGEST:
+        raise ValueError("qualification Stable base mismatch")
     if qualification.get("status") != "PARTIAL_PASS_NOT_RC":
         raise ValueError("unexpected qualification status")
     qualification_gates = qualification.get("gates")
@@ -167,7 +172,7 @@ def main() -> int:
     for gate in (
         "candidate_artifact_packaging",
         "clean_install",
-        "upgrade_from_stable_0_31",
+        "upgrade_from_stable_0_31_1",
         "rollback_forward_recovery",
     ):
         if qualification_gates.get(gate) != "PASS":
@@ -249,7 +254,7 @@ def main() -> int:
             passed("health_incidents_audit_reports_integration", scope_digest),
             passed("candidate_artifact_packaging", qualification_digest),
             passed("clean_install", qualification_digest),
-            passed("upgrade_from_stable_0_31", qualification_digest),
+            passed("upgrade_from_stable_0_31_1", qualification_digest),
             passed("rollback_forward_recovery", qualification_digest),
             passed("postgres_restart_reconnect", workflow_digest),
             passed("security_privacy", security_digest),
