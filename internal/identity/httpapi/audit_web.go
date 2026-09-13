@@ -102,11 +102,11 @@ func (s *Server) webAudit(w http.ResponseWriter, r *http.Request) {
 		event := entry.Event
 		events = append(events, auditWebEvent{
 			OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339),
-			Action: event.Action,
-			Outcome: event.Outcome,
-			ActorID: event.ActorID,
-			SubjectID: event.SubjectID,
-			EventID: event.ID,
+			Action:     event.Action,
+			Outcome:    event.Outcome,
+			ActorID:    event.ActorID,
+			SubjectID:  event.SubjectID,
+			EventID:    event.ID,
 		})
 	}
 	values := url.Values{}
@@ -137,15 +137,15 @@ func (s *Server) webAudit(w http.ResponseWriter, r *http.Request) {
 	var body bytes.Buffer
 	if err := auditWebTemplate.Execute(&body, auditWebPageData{
 		DisplayName: principal.Identity.DisplayName,
-		Username: principal.Identity.Username,
-		Events: events,
-		Action: query.Action,
-		Outcome: query.Outcome,
-		ActorID: query.ActorID,
-		SubjectID: query.SubjectID,
-		Limit: query.Limit,
-		NextURL: nextURL,
-		ExportURL: "/api/v1/audit/events/export?" + exportValues.Encode(),
+		Username:    principal.Identity.Username,
+		Events:      events,
+		Action:      query.Action,
+		Outcome:     query.Outcome,
+		ActorID:     query.ActorID,
+		SubjectID:   query.SubjectID,
+		Limit:       query.Limit,
+		NextURL:     nextURL,
+		ExportURL:   "/api/v1/audit/events/export?" + exportValues.Encode(),
 	}); err != nil {
 		http.Error(w, "Audit unavailable", http.StatusServiceUnavailable)
 		return
