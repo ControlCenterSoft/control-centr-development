@@ -9,8 +9,9 @@ import (
 )
 
 // NewServerWithAuditExport extends the cumulative Identity/RBAC server with the
-// qualified bounded Audit CSV export endpoint. The route reuses the existing
-// global audit.events.read permission and mandatory current-password boundary.
+// qualified bounded Audit CSV export endpoint and the read-only browser Audit
+// search surface. Both routes reuse the existing global audit.events.read
+// permission and mandatory current-password boundary.
 func NewServerWithAuditExport(authService *auth.Service, authorizer SelfAccessAuthorizer, log audit.Logger, config Config) (*Server, error) {
 	server, err := NewServerWithAuditIntegrity(authService, authorizer, log, config)
 	if err != nil {
@@ -19,6 +20,10 @@ func NewServerWithAuditExport(authService *auth.Service, authorizer SelfAccessAu
 	server.mux.Handle(
 		"GET /api/v1/audit/events/export",
 		server.Authenticate(server.Require(rbac.PermissionAuditRead, rbac.GlobalScope())(http.HandlerFunc(server.auditEventsExport))),
+	)
+	server.mux.Handle(
+		"GET /web/audit",
+		server.AuthenticateWeb(server.RequireWeb(rbac.PermissionAuditRead, rbac.GlobalScope())(http.HandlerFunc(server.webAuditEvents))),
 	)
 	return server, nil
 }
