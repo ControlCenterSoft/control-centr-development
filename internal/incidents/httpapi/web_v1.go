@@ -13,10 +13,14 @@ import (
 	"control-center/internal/incidents"
 )
 
+const incidentBrowserPrefix = "/api/v1/incidents/_ui"
+
 // NewWithBrowser layers a read-only operator browser surface over the existing
 // incident API without changing API contracts or mutation semantics. The same
 // Service and ActorResolver are used for both surfaces, so scoped RBAC remains
-// authoritative and cannot be bypassed by browser rendering.
+// authoritative and cannot be bypassed by browser rendering. The reserved
+// `_ui` path segment cannot be a valid Incident ObjectID because canonical
+// identifiers must start and end with an alphanumeric character.
 func NewWithBrowser(service Service, actor ActorResolver, options ...Option) http.Handler {
 	api := New(service, actor, options...)
 	web := &server{service: service, actor: actor, now: time.Now}
@@ -26,8 +30,8 @@ func NewWithBrowser(service Service, actor ActorResolver, options ...Option) htt
 		}
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/incidents/ui", web.handleWebList)
-	mux.HandleFunc("GET /api/v1/incidents/ui/{incidentID}", web.handleWebGet)
+	mux.HandleFunc("GET "+incidentBrowserPrefix, web.handleWebList)
+	mux.HandleFunc("GET "+incidentBrowserPrefix+"/{incidentID}", web.handleWebGet)
 	mux.Handle("/", api)
 	return mux
 }
@@ -50,7 +54,7 @@ type incidentWebDetailData struct {
 var incidentListTemplate = template.Must(template.New("incident-list").Funcs(template.FuncMap{
 	"incidentTime": incidentWebTime,
 	"incidentURL": func(id string) string {
-		return "/api/v1/incidents/ui/" + url.PathEscape(id)
+		return incidentBrowserPrefix + "/" + url.PathEscape(id)
 	},
 }).Parse(`<!doctype html>
 <html lang="ru" data-locale="ru-RU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -58,7 +62,7 @@ var incidentListTemplate = template.Must(template.New("incident-list").Funcs(tem
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light dark}*{box-sizing:border-box}body{margin:0;background:Canvas;color:CanvasText}.content{max-width:92rem;margin:0 auto;padding:1.25rem}.filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem;padding:1rem;border:1px solid currentColor;border-radius:.8rem}label{display:grid;gap:.3rem;font-weight:600}input,select,button{font:inherit;min-height:2.6rem;padding:.5rem;border:1px solid currentColor;border-radius:.5rem;background:Canvas;color:CanvasText}.table-wrap{overflow:auto;margin-top:1.2rem;border:1px solid currentColor;border-radius:.8rem}table{width:100%;border-collapse:collapse;min-width:66rem}th,td{text-align:left;vertical-align:top;padding:.65rem;border-bottom:1px solid currentColor;overflow-wrap:anywhere}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:.25rem .55rem}.muted{opacity:.75}.pager{display:flex;gap:1rem;justify-content:space-between;margin-top:1rem;flex-wrap:wrap}@media(max-width:760px){.filters{grid-template-columns:1fr}.content{padding:.8rem}}
 </style></head><body><main class="content"><h1>Инциденты</h1>
 <p class="muted">Read-only operator view. Доступ и scope проверяются серверным Incident RBAC; неизвестное или запрещённое состояние не подменяется пустым успешным результатом.</p>
-<form class="filters" method="get" action="/api/v1/incidents/ui">
+<form class="filters" method="get" action="`+incidentBrowserPrefix+`">
 <label>Status<select name="status"><option value="">Все</option><option value="open" {{if eq .Status "open"}}selected{{end}}>open</option><option value="acknowledged" {{if eq .Status "acknowledged"}}selected{{end}}>acknowledged</option><option value="resolved" {{if eq .Status "resolved"}}selected{{end}}>resolved</option></select></label>
 <label>Severity<select name="severity"><option value="">Все</option><option value="critical" {{if eq .Severity "critical"}}selected{{end}}>critical</option><option value="warning" {{if eq .Severity "warning"}}selected{{end}}>warning</option><option value="info" {{if eq .Severity "info"}}selected{{end}}>info</option></select></label>
 <label>Scope ID<input name="scope_id" value="{{.ScopeID}}" autocomplete="off"></label>
@@ -75,7 +79,7 @@ var incidentDetailTemplate = template.Must(template.New("incident-detail").Funcs
 }).Parse(`<!doctype html>
 <html lang="ru" data-locale="ru-RU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Control Center — Incident</title><style>
 :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color-scheme:light dark}*{box-sizing:border-box}body{margin:0;background:Canvas;color:CanvasText}.content{max-width:80rem;margin:0 auto;padding:1.25rem}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.card{border:1px solid currentColor;border-radius:.8rem;padding:1rem}.muted{opacity:.75}.badge{display:inline-flex;border:1px solid currentColor;border-radius:999px;padding:.25rem .55rem}ul{padding-left:1.2rem}li{margin:.35rem 0;overflow-wrap:anywhere}@media(max-width:760px){.grid{grid-template-columns:1fr}.content{padding:.8rem}}
-</style></head><body><main class="content"><p><a href="/api/v1/incidents/ui">← Инциденты</a></p><h1>{{.Incident.Title}}</h1><p><span class="badge">{{.Incident.Severity}}</span> <span class="badge">{{.Incident.Status}}</span></p>
+</style></head><body><main class="content"><p><a href="`+incidentBrowserPrefix+`">← Инциденты</a></p><h1>{{.Incident.Title}}</h1><p><span class="badge">{{.Incident.Severity}}</span> <span class="badge">{{.Incident.Status}}</span></p>
 <div class="grid"><section class="card"><h2>Состояние</h2><p>ID: {{.Incident.ObjectID}}</p><p>Scope: {{.Incident.ScopeID}}</p><p>Generation: {{.Incident.Generation}}</p><p>Started: {{incidentTime .Incident.StartedAt}}</p><p>Last observed: {{incidentTime .Incident.LastObservedAt}}</p>{{if .Incident.Acknowledgement}}<p>Acknowledged by {{.Incident.Acknowledgement.ActorID}} at {{incidentTime .Incident.Acknowledgement.At}}</p>{{end}}{{if .Incident.Runbook}}<p>Runbook: {{.Incident.Runbook.ID}} @ {{.Incident.Runbook.Revision}}</p>{{end}}</section>
 <section class="card"><h2>Affected resources</h2><ul>{{range .Incident.AffectedResources}}<li>{{.Kind}} / {{.ID}} ({{.ScopeID}})</li>{{end}}</ul></section>
 <section class="card"><h2>Signals</h2><ul>{{range .Incident.Signals}}<li><strong>{{.Kind}}</strong> · {{.Source}} · {{incidentTime .ObservedAt}}<br>{{.Summary}}</li>{{end}}</ul></section>
@@ -197,7 +201,7 @@ func buildIncidentWebURL(query incidents.ListQuery, cursor *incidents.ListCursor
 		values.Set("before_started_at", cursor.StartedAt.UTC().Format(time.RFC3339))
 		values.Set("before_object_id", cursor.ObjectID)
 	}
-	return "/api/v1/incidents/ui?" + values.Encode()
+	return incidentBrowserPrefix + "?" + values.Encode()
 }
 
 func writeIncidentHTML(w http.ResponseWriter, tmpl *template.Template, data any) {
