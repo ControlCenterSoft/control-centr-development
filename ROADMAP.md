@@ -1,154 +1,157 @@
 # Control Center — продуктовая дорожная карта и критерии готовности
 
-Статус: **CURRENT**
+Статус: **CURRENT / SOURCE OF TRUTH FOR DEVELOPMENT SEQUENCE**
 
 ## 1. Текущий релизный статус
 
-Последний официально опубликованный canonical/source release Control Center — **0.25.0**. Полноценный **PUBLIC STABLE RELEASE 0.25.0** опубликован в официальном stable-канале [`ControlCenterSoft/control-center-stable`](https://github.com/ControlCenterSoft/control-center-stable) с актуальными stable/default branch, tag `v0.25.0`, официальным GitHub Release и предусмотренными artifacts/checksums/manifest/provenance.
+Текущий опубликованный Public Stable — **0.31.0**. Release train 0.31 завершён, однако у опубликованного Linux archive 0.31.0 известен package-shape defect: отсутствует обязательный `scripts/migrate.sh`. Immutable tag/release/assets 0.31.0 не переписываются. Corrective patch identity — **0.31.1**; её публикация требует отдельной qualification и promotion.
 
-Версия **0.26.0** является текущим release candidate и не считается пользовательски опубликованной до завершения собственного release cycle. Наличие кода, контракта, ветки или предварительной версии не означает пользовательскую доступность.
+Линия **0.32.0** — текущая COMMITTED development line: Health / Incidents / Audit / Reports. Наличие merged code или contracts не означает Public Stable до прохождения собственного release cycle.
 
-## 2. Уже опубликованные направления
+## 2. Неизменяемые правила
 
-Опубликованная линия до 0.25.0 включает:
+Канонический путь изменения состояния:
 
-- базовые Identity/RBAC/Audit и durable state boundaries;
-- Changes/Jobs и типизированную модель операций;
-- lifecycle/recovery contracts;
-- Site/Network foundation;
-- advisory Capacity Intelligence: forecast, what-if, placement advice, bottleneck/horizon/calibration и последующие resource-safety ограничения;
-- Session Security Policy;
-- read-only RBAC self-introspection текущей identity;
-- bounded process-local защиту локального входа от brute force и credential spraying;
-- permission-gated bounded read-only доступ к Audit events с bounded pagination, точными фильтрами, integrity validation и fail-closed Audit evidence.
+`Identity/RBAC → Desired State / Change → exact-revision Approval → durable Job → typed execution → Actual State → post-condition verification → Audit/Evidence → rollback/recovery`
 
-Capacity-возможности остаются advisory-only и сами по себе не разрешают автоматическое изменение инфраструктуры.
+Обязательные invariants:
 
-## 3. Ближайшая кандидатная линия
+- arbitrary shell/exec не является универсальным product API;
+- Unknown/Stale/Degraded не отображаются как Healthy;
+- false Success является release blocker;
+- WAN+LAN не включает routing/NAT автоматически;
+- backup без verified restore не считается доказанной защитой;
+- HA без failure/recovery qualification не считается поддержанным;
+- released SQL migrations immutable byte-for-byte;
+- stateful workload перемещается только через provider-specific migration/recovery semantics.
 
-Текущий candidate **0.26.0** — Audit Integrity: permission-gated read-only проверка целостности Audit с fail-closed поведением для persistence и HTTP boundary. До завершения qualification и официальной публикации этот scope остаётся кандидатным и не должен описываться как доступный в public stable.
+## 3. Аутентификация после чистой установки
 
-Следующие capability обязаны сохранять совместимость с опубликованными Identity/RBAC, Change/Job, Audit, recovery и API boundaries. Нельзя объявлять кандидатную функцию опубликованной до официального релиза.
+Чистая установка создаёт локального пользователя `admin` с первоначальным паролем `admin`. Первый вход обязательно требует смены пароля; до смены обычная работа запрещена. Обновление сохраняет установленный пользователем пароль и никогда не сбрасывает его обратно к `admin/admin`.
 
-## 4. Single-node, multi-node и HA
+## 4. Ближайшая линия 0.32–0.42
 
-Single-node является полноценным поддерживаемым способом использования продукта.
+- **0.32.0 — COMMITTED.** Health / Incidents / Audit / Reports.
+- **0.33.0 — PLANNED.** Identity / RBAC / Session / Security Settings UI.
+- **0.34.0 — PLANNED.** Managed Network Planning UI.
+- **0.35.0 — PLANNED.** Managed Network Apply / Verify / Rollback.
+- **0.36.0 — PLANNED.** Node/Agent Enrollment, Trust и Support Gateway / Support Bundle Server.
+- **0.37.0 — PLANNED.** Maintenance / Drain / Replacement / Decommission.
+- **0.38.0 — PLANNED.** Role Placement + Capacity integration.
+- **0.39.0 — PLANNED.** Recovery Points / Backup Repository foundation.
+- **0.40.0 — PLANNED.** PostgreSQL Recovery / PITR / restore verification.
+- **0.41.0 — PLANNED.** Controller Membership / Quorum / DCS.
+- **0.42.0 — PLANNED.** HA / Controlled Switchover / Failover.
 
-Целевая multi-node/HA модель включает:
+Recovery foundation предшествует HA. Planning UI предшествует risk-bearing network execution. Node enrollment предшествует lifecycle automation.
 
-- controller/worker/data/repository/telemetry/backup/edge роли там, где они действительно нужны;
-- maintenance, drain, replacement и decommission;
-- контролируемый перенос ролей и сервисов;
-- quorum/fencing/split-brain protection для применимых stateful профилей;
-- controlled switchover/failover только после фактической сертификации;
-- восстановление после потери одного или нескольких узлов;
-- проверяемое восстановление данных.
+## 5. Milestone 0.43 — Architecture Freeze
 
-Наличие архитектурного контракта HA не является доказательством production failover. Возможность считается поддержанной только после соответствующих failure/recovery tests и публикации версии.
+**0.43.0 — PLANNED. Managed Provider Framework + Infrastructure Solutions Foundation + Intent / Synthesis / Expansion + Market Platform v2.**
 
-## 5. Lifecycle узлов и сервисов
+Фундаментальная архитектура 0.43 заморожена в:
 
-Для узлов применяются состояния и операции enrollment, active, maintenance, drain, replacement и decommission/remove.
+- [`docs/CC-043-ARCHITECTURE-FREEZE-RU.md`](docs/CC-043-ARCHITECTURE-FREEZE-RU.md)
+- [`docs/CC-043-IMPLEMENTATION-PLAN-RU.md`](docs/CC-043-IMPLEMENTATION-PLAN-RU.md)
 
-Для опасной операции обязательны:
+После Architecture Freeze новые foundation-domains не добавляются в scope 1.0 без явного roadmap change. Реализация 0.43 должна двигаться через contracts → persistence → API → Provider Runtime → Solution Orchestrator → Product Web UI → reference qualification.
 
-- описание изменения;
-- риск и blast radius;
-- preflight;
-- проверка результата;
-- rollback/recovery или безопасная компенсация.
+Frozen foundation включает:
 
-Stateful workload нельзя переносить как stateless сервис: необходим provider-specific migration/recovery adapter и проверяемое состояние данных.
+- Infrastructure Intent / Requirements;
+- Solution Catalog / Blueprint Library;
+- Solution Synthesis / Architecture Validator / Expansion Planner;
+- Managed Provider Framework / Provider Contract v1;
+- Bare Metal Provisioning;
+- Managed Network Fabric;
+- Storage Infrastructure;
+- IPAM / Addressing / Naming;
+- PKI / Certificate / Trust;
+- Secrets / Credentials / Service Identity;
+- Time / NTP / Clock Trust;
+- Artifact / Repository / Content Supply Chain;
+- Physical Infrastructure / Rack / Power / Failure Domains;
+- Third-Party Licensing / Entitlement / Supportability;
+- Infrastructure BOM / Procurement Readiness;
+- Commissioning / Acceptance / Handover;
+- Operational Policy / SLO / Maintenance & Change Windows;
+- Configuration Baseline / Drift / Compliance;
+- Vulnerability / Exposure / Patch Posture;
+- Asset Lifecycle / Warranty / EOL / Spares;
+- External Dependency / WAN / Internet dependencies;
+- Data Governance / Retention / Privacy;
+- Integrations / ITSM / CMDB / Notifications / Webhooks;
+- Cross-Domain Risk & Readiness;
+- Reference Architecture Qualification.
 
-## 6. Backup, restore и recovery
+Greenfield и Brownfield являются равноправными сценариями. Expansion поддерживает как expand-existing, так и create-new-instance/create-new-cluster в пределах certified provider capabilities.
 
-Recovery является отдельной продуктовой подсистемой. Целевая модель включает Recovery Points, integrity metadata, изолированный restore, PostgreSQL backup/PITR для поддерживаемых профилей, object-level recovery, измеряемые RPO/RTO и регулярные restore drills.
+## 6. Market milestones 0.44–0.55
 
-Backup без подтверждённого restore не считается доказанной готовностью восстановления.
+- **0.44** Directory Services providers: Samba AD / FreeIPA.
+- **0.45** DNS / DHCP.
+- **0.46** PXE Deployment Windows / Linux.
+- **0.47** Software Automation Windows / Linux.
+- **0.48** IT Asset Inventory.
+- **0.49** Software Inventory & Compliance.
+- **0.50** File Services.
+- **0.51** Monitoring provider.
+- **0.52** Backup providers.
+- **0.53** Mail & Groupware.
+- **0.54** 1C:Enterprise Server.
+- **0.55** Secure Web Gateway / Corporate Proxy.
 
-## 7. Managed Network
+Конкретный provider не может объявлять capability, отсутствующую в его qualified Provider Contract.
 
-Network Management является частью Core. Целевая модель должна поддерживать multi-NIC, назначаемые зоны, VLAN/bonding там, где доступно, routing, DNS/NTP, firewall policy и staged changes с connectivity verification.
+## 7. Capacity / policy-driven operations 0.56–0.59
 
-NAT/port-forwarding включаются только явно. WAN+LAN конфигурация не должна автоматически превращать узел в маршрутизатор. Ошибочное сетевое изменение должно иметь automatic rollback или заранее определённый recovery path.
+- **0.56** Capacity Intelligence v2.
+- **0.57** Policy-driven Placement.
+- **0.58** Controlled Automatic Rebalance.
+- **0.59** Bounded Automatic Recovery.
 
-## 8. Core и Market
+Автоматизация разрешена только в явно заданной policy boundary и не заменяет Change/Job/Audit.
 
-Core содержит обязательные платформенные функции:
+## 8. Mobile 0.60–0.61
 
-- Identity/RBAC;
-- Desired/Actual State;
-- Changes/Jobs;
-- Node/Role/Lifecycle;
-- Network;
-- Monitoring/Health;
-- Audit;
-- Backup/Recovery contracts;
-- Capacity Planner foundation;
-- системные API и общие security boundaries.
+- **0.60** Mobile v1 read-focused.
+- **0.61** bounded mobile actions with server-side revalidation.
 
-Market содержит устанавливаемые инфраструктурные возможности. Для каждого модуля обязательны identity, compatibility/dependency metadata, permissions/capabilities, network/storage requirements, capacity profile, lifecycle и внутренний legal/compliance metadata block: license/SPDX expression, authoritative source, distribution mode, commercial/redistribution disposition, notice/source-offer requirements и versioned evidence digest. При clean status этот механизм не должен добавлять отдельный обязательный пользовательский workflow.
+Mobile не создаёт обходных административных API.
 
-Приоритетные семейства Market:
+## 9. Hardening / 1.0
 
-- Directory Services с поддерживаемыми providers, включая Samba AD и FreeIPA там, где применимо;
-- DNS/DHCP;
-- PXE Windows/Linux;
-- Software Automation Windows/Linux;
-- IT Asset Inventory и Software Inventory/Compliance;
-- File Services;
-- Monitoring;
-- Backup и другие инфраструктурные providers через единый module contract.
+- **0.62** Accessibility / Localization / Security / Performance hardening.
+- **0.63** Install / Upgrade / Rollback / Migration certification.
+- **0.64** Scale certification.
+- **0.65** HA/DR disaster drills.
+- **0.66** Integrated Production Readiness.
+- **0.90** Feature Freeze.
+- **0.95** Release Candidate.
+- **1.0.0** Public Stable target for the known scope.
 
-Полный lifecycle модуля: Install → Configure → Health → Update → Migrate/Drain → Backup → Restore → Remove. Failover добавляется только для provider, где он реально поддержан и проверен.
+## 10. Definition of Done capability
 
-## 9. Capacity Intelligence
-
-Целевой Capacity Planner должен отвечать на три вопроса: сколько ресурсов безопасно доступно сейчас, когда закончится резерв и что конкретно рекомендуется изменить.
-
-Направления развития:
-
-- workload profiles;
-- nonlinear capacity curves;
-- DB/storage/network bottleneck analysis;
-- self-calibration по фактической telemetry;
-- прогноз исчерпания резерва;
-- what-if для устройств и сервисов;
-- рекомендации по добавлению/переносу ролей и увеличению ресурсов;
-- confidence score и failure reserve.
-
-Автоматическое применение рекомендации допускается только в отдельно опубликованной policy-driven границе и только для явно разрешённых workloads.
-
-## 10. Аутентификация после чистой установки
-
-Для публичного stable **0.25.0** после чистой установки создаётся локальный пользователь `admin` с первоначальным паролем `admin`. Первый вход обязан привести к смене пароля; до смены обычная работа запрещена. При обновлении пользовательский пароль сохраняется и не сбрасывается к первоначальному значению.
-
-Для первой подходящей будущей версии зафиксировано изменение bootstrap-механизма: clean install должен генерировать уникальный криптографически стойкий одноразовый пароль для `admin`, хранить его локально только в `/root/control-center-bootstrap-password` с `root:root` и mode `0600`, не выводить credential в logs/Audit/telemetry/support/public artifacts, требовать смену до обычной работы и удалять bootstrap-файл после успешной смены. Обновление не должно генерировать новый bootstrap credential и не должно сбрасывать пользовательский пароль. Эта будущая политика не должна приписываться уже выпущенному 0.25.0.
-
-## 11. Критерии готовности capability
-
-Capability готова только если определены и проверены:
+Capability готова только при наличии:
 
 1. object/data/API contract;
 2. RBAC permissions/scopes;
-3. Desired/Actual semantics для изменяющей state функции;
+3. Desired/Actual semantics для mutations;
 4. failure/recovery model;
 5. validation, stale-state protection и idempotency;
-6. health/observability/audit semantics;
-7. negative/failure/security tests по уровню риска;
+6. health/observability/Audit semantics;
+7. positive/failure/security tests;
 8. upgrade/migration path;
 9. backup/restore semantics для stateful data;
-10. пользовательская и эксплуатационная документация;
-11. соответствие фактической реализации заявленному поведению.
+10. user/operations documentation;
+11. фактического соответствия реализации заявленному поведению.
 
-## 12. Критерии готовности релиза
+Для risk-bearing operation дополнительно обязательны exact target, preview/diff, blast radius, preflight, approval policy, durable Job, post-condition verification и recovery path.
 
-Релиз нельзя считать завершённым, если остаётся release-blocking defect, отсутствует проверяемый acceptance, не определён install/upgrade/restore path для заявленной области, release notes расходятся с кодом, пользовательская документация выдаёт будущую функцию за опубликованную либо остаётся неразрешённая high-risk security/recovery проблема.
+## 11. Release rule
 
-Canonical/source release и PUBLIC STABLE RELEASE — разные стадии. Публично доступной stable-версией считается только релиз, для которого подтверждены официальный stable/default branch, version tag, GitHub Release с `draft=false` и `prerelease=false`, а также предусмотренные public artifacts/manifest/checksums/provenance. Сам canonical release недостаточен.
+Каждый начатый release train обязан завершаться официальным Public Stable release. COMMITTED/RC/SOURCE RELEASE — промежуточные состояния. Коммерческие/юридические материалы могут идти параллельно и не должны удерживать технически готовый Public Stable, если неподтверждённые commercial capabilities выключены и не заявляются. Security, upgrade, rollback, recovery, data-preservation и false-success gates обходить нельзя.
 
-## 13. Границы продукта
+## 12. Product boundary
 
-Control Center — самостоятельный инфраструктурный продукт для администраторов. Другие продукты не являются обязательными runtime-компонентами Control Center.
-
-Продуктовая документация не должна содержать внутренние процессы разработки, служебные адреса, секреты, ключи, персональные данные или иную внутреннюю operational information.
+Control Center — самостоятельный infrastructure control plane. Product documentation не раскрывает внутреннюю development/CI methodology, внутренние адреса, repository mechanics, secrets или иные служебные данные.
