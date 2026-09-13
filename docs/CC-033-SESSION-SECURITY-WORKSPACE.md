@@ -15,6 +15,7 @@
 - `mutation_authorized=false` всегда: наличие кнопки отзыва сессии не является authorization evidence;
 - фактический revoke заново проходит существующий authenticated self-only revocation path и Audit;
 - target `session_id` не меняет actor scope: сервер всегда передаёт в revocation service только `principal.Identity.ID`, полученный из текущей аутентифицированной сессии;
+- browser revoke требует POST, exact same-origin `Origin`, form-urlencoded body и не принимает mutation target из query string; это дополняет `SameSite=Strict` session cookie и не заменяет server-side owner revalidation;
 - текущая session должна быть ровно одна и совпадать с authenticated session identity; mismatch блокируется fail-closed;
 - expired, duplicate, future-dated или temporal-inconsistent session evidence отклоняется целиком;
 - session deadlines обязаны быть согласованы с текущей effective policy: absolute lifetime не может превышать `absolute_ttl_seconds`, а idle deadline — `idle_timeout_seconds` от последней подтверждённой активности;
@@ -75,6 +76,6 @@ Browser route не принимает subject/actor из query/form. Query `acto
 
 ## Qualification boundary
 
-Добавлен test-only код для последующей runner qualification: anonymous API denial, self-only/credential-free projection, first-login blocking, отзыв другой собственной session без потери текущей session и current-session revoke с очисткой cookie. В этой non-runner линии тесты не запускались и PASS не заявляется.
+Добавлен test-only код для последующей runner qualification: anonymous API denial, self-only/credential-free projection, first-login blocking, cross-origin/query-selected browser mutation denial, отзыв другой собственной session без потери текущей session и current-session revoke с очисткой cookie. В этой non-runner линии тесты не запускались и PASS не заявляется.
 
 Этот slice не добавляет SQL migration, dependency, новую permission, generic execution, infrastructure mutation, external publication или commercial entitlement. Он остаётся в разрешённой границе 0.33 и не изменяет VERSION/RC/Public Stable identity.
