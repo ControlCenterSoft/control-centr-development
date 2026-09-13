@@ -18,13 +18,15 @@ func validManifest() Manifest {
 		ManagementLevels:         []ManagementLevel{ManagementObserved, ManagementConnected, ManagementManaged},
 		Capabilities: []CapabilitySpec{
 			{
-				ID:          "discover",
-				Mutation:    false,
-				RiskClass:   RiskReadOnly,
-				Idempotency: "repeatable-read",
+				ID:               "discover",
+				ManagementLevels: []ManagementLevel{ManagementObserved, ManagementConnected, ManagementManaged},
+				Mutation:         false,
+				RiskClass:        RiskReadOnly,
+				Idempotency:      "repeatable-read",
 			},
 			{
 				ID:                  "cluster.create",
+				ManagementLevels:    []ManagementLevel{ManagementManaged},
 				Mutation:            true,
 				RiskClass:           RiskHigh,
 				RequiredPermissions: []string{"cluster.manage"},
@@ -49,6 +51,12 @@ func TestManifestValidateAndSupports(t *testing.T) {
 	if !manifest.Supports("cluster.create", ManagementManaged) {
 		t.Fatal("managed cluster.create should be supported")
 	}
+	if manifest.Supports("cluster.create", ManagementObserved) {
+		t.Fatal("managed-only cluster.create must not be exposed at observed level")
+	}
+	if !manifest.Supports("discover", ManagementObserved) {
+		t.Fatal("discover should be available at observed level")
+	}
 	if manifest.Supports("cluster.create", ManagementLevel("unsupported")) {
 		t.Fatal("unsupported management level must fail closed")
 	}
@@ -68,6 +76,19 @@ func TestManifestRejectsUnsafeCapabilityMetadata(t *testing.T) {
 	manifest.Capabilities = append(manifest.Capabilities, manifest.Capabilities[0])
 	if err := manifest.Validate(); err == nil {
 		t.Fatal("duplicate capability must be rejected")
+	}
+
+	manifest = validManifest()
+	manifest.Capabilities[1].ManagementLevels = []ManagementLevel{ManagementObserved}
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("observed management level must not expose a mutation capability")
+	}
+
+	manifest = validManifest()
+	manifest.ManagementLevels = []ManagementLevel{ManagementObserved, ManagementManaged}
+	manifest.Capabilities[0].ManagementLevels = []ManagementLevel{ManagementConnected}
+	if err := manifest.Validate(); err == nil {
+		t.Fatal("capability level not declared by manifest must be rejected")
 	}
 }
 
